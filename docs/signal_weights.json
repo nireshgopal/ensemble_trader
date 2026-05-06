@@ -1,0 +1,98 @@
+{
+  "_metadata": {
+    "version": "v20260505_reconciled",
+    "generated_at": "2026-05-05 20:35:00",
+    "source": "E1_SPECIFICATION.md",
+    "method": "manual reconciliation to SSOT"
+  },
+  "HEALTHY": {
+    "sig_rs_3month": {
+      "weight": 0.27,
+      "direction": 1
+    },
+    "sig_ma_slope": {
+      "weight": 0.23,
+      "direction": 1
+    },
+    "sig_rsi_oversold": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_drawdown_recovery": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_fundamental": {
+      "weight": 0.50,
+      "direction": 1
+    },
+    "sig_ma_crossover": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_sector_momentum": {
+      "weight": 0.0,
+      "direction": 1
+    }
+  },
+  "FRAGILE": {
+    "sig_ma_slope": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_rsi_oversold": {
+      "weight": 0.35,
+      "direction": 1
+    },
+    "sig_drawdown_recovery": {
+      "weight": 0.27,
+      "direction": 1
+    },
+    "sig_fundamental": {
+      "weight": 0.38,
+      "direction": 1
+    },
+    "sig_ma_crossover": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_rs_3month": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_sector_momentum": {
+      "weight": 0.0,
+      "direction": 1
+    }
+  },
+  "BEAR": {
+    "sig_ma_crossover": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_rs_3month": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_sector_momentum": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_ma_slope": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_rsi_oversold": {
+      "weight": 0.35,
+      "direction": 1
+    },
+    "sig_drawdown_recovery": {
+      "weight": 0.27,
+      "direction": 1
+    },
+    "sig_fundamental": {
+      "weight": 0.38,
+      "direction": 1
+    }
+  }
+}

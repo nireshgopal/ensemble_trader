@@ -1,0 +1,260 @@
+"""
+E1 V1.3 Exit Evaluator — Flash Production Spec (Final Config D)
+
+Architecture:
+  1. StopLifecycleManager: 6.0x ATR Safety Stop (Circuit Breaker).
+  2. SignalEvaluator: Flat 20-day horizon + 40% Score Decay Veto.
+"""
+from datetime import date, datetime, timedelta
+import logging
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+def get_trading_days_held(conn, ticker: str, entry_date, as_of_date) -> int:
+    """
+    Count trading days between entry_date (exclusive) and as_of_date (inclusive)
+    using the refined.price_history table as the authoritative trading calendar.
+    """
+    try:
+        result = conn.execute("""
+            SELECT COUNT(*) FROM refined.price_history
+            WHERE ticker = ?
+              AND date > ?
+              AND date <= ?
+        """, [ticker, entry_date, as_of_date]).fetchone()
+        return result[0] if result else 0
+    except Exception as e:
+        # Fallback: approximate from calendar days (5/7 ratio)
+        import logging
+        logging.getLogger(__name__).warning(
+            f"Trading day count failed for {ticker}: {e}. Using calendar approximation."
+        )
+        from datetime import date
+        cal_days = (as_of_date - entry_date).days if hasattr(entry_date, 'days') else 0
+        return int(cal_days * 5 / 7)
+
+def earnings_exit_veto(days_to_earnings: int, days_held: int) -> bool:
+    """Force exit if earnings within 2 days and we've held at least 5 days."""
+    if days_to_earnings is None:
+        return False
+    return days_to_earnings <= 2 and days_held >= 5
+
+class StopLifecycleManager:
+    """
+    V1.3 Stop Lifecycle (Final Specification).
+    Simple safety machine: hard stop at 6.0x ATR.
+    No breakeven advancement or trailing stops as they erode Sharpe.
+    """
+    def evaluate_stop_progression(self, position: dict, current_price: float, 
+                                   low_price: float = None, highest_close: float = None) -> dict:
+        """
+        Stop Lifecycle Engine:
+        - Mode 1: Circuit Breaker (6.0x ATR)
+        - Mode 2: Breakeven (Entry + 0.01) - Optional
+        - Mode 3: Trailing (1.5x ATR) - Optional
+        """
+        initial_stop = position.get('initial_stop', 0.0)
+        be_trigger = position.get('breakeven_trigger', 0.0)
+        stop_stage = position.get('stop_stage', 'INITIAL')
+        atr = position.get('atr_at_entry', 0.0)
+        
+        trigger_price = low_price if low_price is not None else current_price
+        
+        # 1. BREACH CHECK (Priority 1)
+        # If INITIAL or TRAILING, check against the active stop
+        active_stop = initial_stop if stop_stage == 'INITIAL' else position.get('stop_loss', initial_stop)
+        if stop_stage == 'TRAILING':
+            active_stop = position.get('trailing_stop', active_stop)
+            
+        if active_stop > 0 and trigger_price <= active_stop:
+            return {
+                'action': 'EMERGENCY_MARKET_EXIT',
+                'exit_trigger': 'STOP_VIOLATION',
+                'exit_price': active_stop,
+                'reason': f"{stop_stage} stop {active_stop:.2f} breached."
+            }
+            
+        # 1.5. TARGET 2 CHECK (Simulation OCO mimic)
+        target_2 = position.get('target_2', 0.0)
+        high_price = highest_close if highest_close is not None else current_price
+        if target_2 > 0 and high_price >= target_2:
+            return {
+                'action': 'SELL',
+                'exit_trigger': 'TARGET_2_HIT',
+                'exit_price': target_2,
+                'reason': f"Target 2 (${target_2:.2f}) reached intraday."
+            }
+            
+        # 2. PROMOTION CHECK (Only if not already trailing)
+        if stop_stage == 'INITIAL' and be_trigger > 0 and current_price >= be_trigger:
+            return {
+                'action': 'ADVANCE_TO_BREAKEVEN',
+                'new_stop': position['entry_price'] + 0.01,
+                'reason': 'Breakeven trigger hit.'
+            }
+            
+        # 3. TRAILING CHECK (If in TRAILING or BREAKEVEN)
+        if stop_stage in ('BREAKEVEN', 'TRAILING') and highest_close and atr > 0:
+            trail_mult = position.get('trailing_mult_override', 1.5)
+            potential_stop = highest_close - (atr * trail_mult)
+            current_stop = position.get('stop_loss', 0.0)
+            
+            if potential_stop > current_stop:
+                return {
+                    'action': 'UPDATE_TRAILING_STOP',
+                    'new_stop': potential_stop,
+                    'reason': 'Trailing stop ratcheted up.'
+                }
+                
+        return {'action': 'NONE'}
+
+    def evaluate_signal_decay(self, position: dict, current_score: float, today: date, current_regime: str = None, yesterday_regime: str = None, conn=None) -> dict:
+        """
+        Signal-Driven Exits (Config D + Config B Veto):
+        1. Primary: Flat 20-day time exit.
+        2. Veto: 40% score decay from entry score (if held > 5 days).
+        """
+        entry_date = self._parse_entry_date(position)
+        if entry_date is None:
+            return {'action': 'NONE'}
+            
+        ticker = position.get('ticker')
+        if conn and ticker:
+            days_held = get_trading_days_held(conn, ticker, entry_date, today)
+        else:
+            cal_days = (today - entry_date).days
+            days_held = int(cal_days * 5 / 7)
+        
+        # 1. Flat 20-day time exit (Primary)
+        if days_held >= 20:
+            return {
+                'action': 'CLOSE_POSITION',
+                'exit_trigger': 'TIME_EXIT_20D',
+                'reason': f'Held {days_held} trading days',
+                'urgency': 'EOD_LIMIT'
+            }
+            
+        # 2. Almanac Exit Veto (V1.3 Rule)
+        # Force exit if earnings within 2 days and we've held at least 5 days
+        days_to_earn = position.get('days_to_earnings')
+        if earnings_exit_veto(days_to_earnings=days_to_earn, days_held=days_held):
+            return {
+                'action': 'CLOSE_POSITION',
+                'exit_trigger': 'ALMANAC_EXIT_VETO',
+                'reason': f'Earnings in {days_to_earn}d',
+                'urgency': 'EOD_LIMIT'
+            }
+
+        # 3. Score Decay Veto (Config B logic)
+        # Entry score should be stored in 'entry_score' column (sandbox.e1_positions)
+        entry_score = position.get('entry_score', 0.65)
+        decay_baseline = position.get('score_at_entry_baseline') or entry_score
+        
+        if days_held > 5 and current_score is not None:
+            if current_score < (decay_baseline * 0.60):
+                regime_transitioned = (yesterday_regime is not None and current_regime != yesterday_regime)
+                if regime_transitioned:
+                    new_baseline = current_score
+                    pid = position.get('id')
+                    if conn and pid is not None and not __import__('pandas').isna(pid):
+                        conn.execute(f"""
+                            UPDATE sandbox.e1_positions
+                            SET ensemble_score = ?,
+                                score_at_entry_baseline = ?,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        """, [new_baseline, new_baseline, int(pid)])
+                    logger.info(
+                        f"{ticker} REGIME TRANSITION {yesterday_regime}→{current_regime}: "
+                        f"Decay baseline reset to {new_baseline:.3f} (was {decay_baseline:.3f}). "
+                        f"Veto suppressed for this transition day."
+                    )
+                    return {'action': 'HOLD', 'reason': f'REGIME_TRANSITION_BASELINE_RESET_{current_regime}'}
+                else:
+                    return {
+                        'action': 'CLOSE_POSITION',
+                        'exit_trigger': 'SCORE_DECAY_VETO',
+                        'reason': f'Score {current_score:.2f} < 60% of baseline {decay_baseline:.2f}',
+                        'urgency': 'EOD_LIMIT'
+                    }
+            
+        return {'action': 'NONE'}
+
+    def _parse_entry_date(self, position: dict):
+        """Normalize entry_date to a date object."""
+        entry_date = position.get('entry_date')
+        if entry_date is None:
+            return None
+        if hasattr(entry_date, 'date'):
+            return entry_date.date()
+        if isinstance(entry_date, str):
+            try:
+                return datetime.strptime(entry_date, '%Y-%m-%d').date()
+            except ValueError:
+                return datetime.strptime(entry_date.split(' ')[0], '%Y-%m-%d').date()
+        return entry_date
+
+
+def evaluate(position: dict, mdata: dict, current_regime: str = 'HEALTHY', yesterday_regime: str = 'HEALTHY', today: date = None, conn=None) -> dict:
+    """
+    Unified entry point for E1 Trader.
+    mdata keys: current_score, current_price, high_price, highest_close, low_price, atr_14, rsi_14, pnl_pct
+    """
+    slm = StopLifecycleManager()
+    
+    # 1. Check Circuit Breaker / Stop Progression
+    low_price = mdata.get('low_price', mdata.get('current_price'))
+    highest_close = mdata.get('highest_close', mdata.get('current_price'))
+    
+    stop_res = slm.evaluate_stop_progression(position, mdata['current_price'], 
+                                            low_price=low_price, 
+                                            highest_close=highest_close)
+    
+    if stop_res['action'] in ('EMERGENCY_MARKET_EXIT', 'SELL'):
+        return {
+            'action': 'SELL', 
+            'reason': stop_res['reason'], 
+            'exit_price': stop_res.get('exit_price'),
+            'urgency': stop_res.get('urgency', 'EMERGENCY_MARKET_EXIT')
+        }
+    
+    if stop_res['action'] in ('ADVANCE_TO_BREAKEVEN', 'UPDATE_TRAILING_STOP'):
+        return {
+            'action': stop_res['action'],
+            'new_stop': stop_res['new_stop'],
+            'reason': stop_res['reason']
+        }
+        
+    # 2. Check Signal Decay (Time & Score)
+    eval_today = today if today is not None else date.today()
+    decay_res = slm.evaluate_signal_decay(position, mdata.get('current_score'), eval_today, current_regime=current_regime, yesterday_regime=yesterday_regime, conn=conn)
+    
+    if decay_res['action'] == 'CLOSE_POSITION':
+        return {
+            'action': 'SELL',
+            'reason': decay_res['reason'],
+            'exit_price': mdata.get('current_price'), # Decay exits fill at close
+            'urgency': decay_res.get('urgency', 'EOD_LIMIT')
+        }
+    elif decay_res['action'] == 'HOLD':
+        return decay_res
+        
+    return {'action': 'HOLD', 'reason': 'Thesis Intact'}
+
+def evaluate_pead_exit(position: dict, today: date, signals: dict, conn=None) -> dict:
+    # PEAD now follows the flat 20-day rule
+    slm = StopLifecycleManager()
+    res = slm.evaluate_signal_decay(position, signals.get('ensemble_score'), today, conn=conn)
+    return {'exit': res['action'] == 'CLOSE_POSITION', 'reason': res.get('reason')}
+
+def evaluate_trend_exit(position: dict, today: date, signals: dict, regime: str, conn=None) -> dict:
+    slm = StopLifecycleManager()
+    res = slm.evaluate_signal_decay(position, signals.get('ensemble_score'), today, conn=conn)
+    return {'exit': res['action'] == 'CLOSE_POSITION', 'reason': res.get('reason')}
+
+def evaluate_mean_reversion_exit(position: dict, today: date, signals: dict, conn=None) -> dict:
+    slm = StopLifecycleManager()
+    res = slm.evaluate_signal_decay(position, signals.get('ensemble_score'), today, conn=conn)
+    return {'exit': res['action'] == 'CLOSE_POSITION', 'reason': res.get('reason')}

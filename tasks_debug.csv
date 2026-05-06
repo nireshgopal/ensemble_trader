@@ -1,0 +1,259 @@
+"TaskName","LastRunTime","NextRunTime"
+"MdmDiagnosticsCleanup","11/30/1999 12:00:00 AM",
+"WinSAT","5/4/2026 1:33:46 PM",
+"Logon","4/15/2026 7:27:41 AM",
+"RunOnReboot","11/30/1999 12:00:00 AM",
+"La57Cleanup","4/29/2026 1:22:36 PM",
+"MapsToastTask","11/30/1999 12:00:00 AM",
+"Retry","11/30/1999 12:00:00 AM",
+"Notifications","5/6/2026 10:01:04 AM",
+"ReconcileLanguageResources","5/6/2026 8:29:05 AM",
+"Installation","5/6/2026 6:44:05 AM",
+"RemediateHardwareChange","11/30/1999 12:00:00 AM",
+"DetectHardwareChange","11/30/1999 12:00:00 AM",
+"Cellular","11/30/1999 12:00:00 AM",
+"WindowsActionDialog","11/30/1999 12:00:00 AM",
+"AutomaticOfflineMemoryDiagnostic","4/15/2026 6:29:05 AM",
+"SystemSoundsService","4/15/2026 6:29:05 AM",
+"Device Install Reboot Required","4/15/2026 6:29:05 AM",
+"PCR Prediction Framework Firmware Update Task","11/30/1999 12:00:00 AM",
+"MNO Metadata Parser","11/30/1999 12:00:00 AM",
+"VerifyWinRE","3/12/2025 8:26:03 PM",
+"EduPrintProv","11/30/1999 12:00:00 AM",
+"AnalyzeSystem","5/5/2026 1:16:34 PM",
+"NcsiIdentifyUserProxies","4/15/2026 6:29:05 AM",
+"ProcessMemoryDiagnosticEvents","5/6/2026 9:40:44 AM",
+"RunFullMemoryDiagnostic","11/30/1999 12:00:00 AM",
+"RequestTrace","11/30/1999 12:00:00 AM",
+"LPRemove","5/4/2026 1:33:27 PM",
+"WhesvcToast","11/30/1999 12:00:00 AM",
+"WiFiTask","11/30/1999 12:00:00 AM",
+"Synchronize Language Settings","5/5/2026 8:35:35 AM",
+"DmClientOnScenarioDownload","5/5/2026 10:38:16 PM",
+"GovernedFeatureUsageProcessing","4/15/2026 1:33:02 AM",
+"EDP Auth Task","11/30/1999 12:00:00 AM",
+"File History (maintenance mode)","5/5/2026 1:05:55 PM",
+"InputSettingsRestoreDataAvailable","11/30/1999 12:00:00 AM",
+"UsageDataFlushing","4/15/2026 6:34:11 AM",
+"DmClient","5/5/2026 1:05:55 PM",
+"DXGIAdapterCache","4/15/2026 1:33:51 AM",
+"EDP App Launch Task","11/30/1999 12:00:00 AM",
+"dusmtask","11/30/1999 12:00:00 AM",
+"EDP Inaccessible Credentials Task","11/30/1999 12:00:00 AM",
+"ExploitGuard MDM policy Refresh","4/15/2026 1:32:50 AM",
+"StorageCardEncryption Task","11/30/1999 12:00:00 AM",
+"StorageSense","5/5/2026 1:05:55 PM",
+"MouseSyncDataAvailable","11/30/1999 12:00:00 AM",
+"PenSyncDataAvailable","11/30/1999 12:00:00 AM",
+"RemoteTouchpadSyncDataAvailable","11/30/1999 12:00:00 AM",
+"syncpensettings","11/30/1999 12:00:00 AM",
+"TouchpadSyncDataAvailable","11/30/1999 12:00:00 AM",
+"ScanForUpdatesAsUser","5/5/2026 1:05:55 PM",
+"WakeUpAndContinueUpdates","11/30/1999 12:00:00 AM",
+"RestoreDevice","4/14/2026 11:45:14 PM",
+"ReconcileConfigs","7/9/2025 11:33:04 PM",
+"UsageDataReporting","5/5/2026 11:33:05 PM",
+"LocalUserSyncDataAvailable","3/23/2026 5:51:42 PM",
+"ReconcileFeatures","5/5/2026 11:36:05 PM",
+"UsageDataReceiver","5/2/2026 10:00:19 PM",
+"RemoteMouseSyncDataAvailable","11/30/1999 12:00:00 AM",
+"RemotePenSyncDataAvailable","11/30/1999 12:00:00 AM",
+"Sysprep Generalize Drivers","11/30/1999 12:00:00 AM",
+"Windows Defender Scheduled Scan","5/5/2026 7:33:04 PM",
+"Windows Defender Cleanup","5/5/2026 7:33:04 PM",
+"Windows Defender Cache Maintenance","5/5/2026 7:33:04 PM",
+"Windows Defender Verification","5/5/2026 7:33:04 PM",
+"BfeOnServiceStartTypeChange","11/30/1999 12:00:00 AM",
+"ForceSynchronizeTime","4/15/2026 1:33:09 AM",
+"SynchronizeTime","5/5/2026 1:05:55 PM",
+"Usb-Notifications","1/24/2026 9:31:13 AM",
+"MsCtfMonitor","4/15/2026 6:29:05 AM",
+"UpdateAssistantAllUsersRun","11/10/2019 11:12:50 PM",
+"ResolutionHost","4/16/2026 12:38:14 PM",
+"WiFiTask","10/24/2025 5:36:02 PM",
+"UPnPHostConfig","11/30/1999 12:00:00 AM",
+"UpdateAssistant","11/10/2019 11:12:50 PM",
+"UpdateLibrary","11/30/1999 12:00:00 AM",
+"NotificationTask","11/30/1999 12:00:00 AM",
+"Device-Sync","11/30/1999 12:00:00 AM",
+"Automatic-Device-Join","11/30/1999 12:00:00 AM",
+"Recovery-Check","11/30/1999 12:00:00 AM",
+"AcerJumpstartTask","4/15/2026 6:34:05 AM",
+"XblGameSaveTask","11/30/1999 12:00:00 AM",
+"OobeDiscovery","4/15/2026 1:32:51 AM",
+"CDSSync","4/15/2026 6:31:07 AM",
+"MoProfileManagement","11/30/1999 12:00:00 AM",
+"Scheduled Start","11/30/1999 12:00:00 AM",
+"Calibration Loader","4/15/2026 6:29:05 AM",
+"Work Folders Logon Synchronization","4/15/2026 6:34:05 AM",
+"Work Folders Maintenance Work","5/5/2026 1:05:55 PM",
+"CacheTask","4/15/2026 6:29:05 AM",
+"SynchronizeTimeZone","5/1/2026 12:25:07 PM",
+"ThemesSyncedImageDownload","5/5/2026 1:05:55 PM",
+"FamilySafetyMonitorToastTask","11/30/1999 12:00:00 AM",
+"CreateObjectTask","4/29/2026 1:48:10 PM",
+"FamilySafetyMonitor","11/30/1999 12:00:00 AM",
+"UpdateUserPictureTaskContained","11/30/1999 12:00:00 AM",
+"UpdateUserPictureTask","11/30/1999 12:00:00 AM",
+"IndexerAutomaticMaintenance","5/5/2026 1:05:55 PM",
+"RegIdleBackup","5/3/2026 12:33:37 PM",
+"Initialization","11/30/1999 12:00:00 AM",
+"Device Install Group Policy","11/30/1999 12:00:00 AM",
+"StartComponentCleanup","5/3/2026 12:34:04 PM",
+"Account Cleanup","11/30/1999 12:00:00 AM",
+"OOBEFodSetup","2/26/2025 11:26:26 AM",
+"PITRTask","4/15/2026 2:13:19 AM",
+"HeadsetButtonPress","11/30/1999 12:00:00 AM",
+"Storage Tiers Management Initialization","11/30/1999 12:00:00 AM",
+"FamilySafetyRefreshTask","11/30/1999 12:00:00 AM",
+"HybridDriveCachePrepopulate","11/30/1999 12:00:00 AM",
+"ResPriStaticDbSync","5/5/2026 1:05:53 PM",
+"SR","5/3/2026 12:38:37 PM",
+"WsSwapAssessmentTask","4/22/2026 12:38:26 PM",
+"Interactive","11/30/1999 12:00:00 AM",
+"MaintenanceTasks","5/5/2026 1:16:09 PM",
+"SvcRestartTaskLogon","2/26/2025 11:26:27 AM",
+"SpaceManagerTask","11/30/1999 12:00:00 AM",
+"SpaceAgentTask","11/30/1999 12:00:00 AM",
+"SustainabilityTelemetry","5/3/2026 12:33:37 PM",
+"HybridDriveCacheRebalance","11/30/1999 12:00:00 AM",
+"EnableLicenseAcquisition","4/15/2026 1:32:50 AM",
+"Diagnostics","5/5/2026 1:05:55 PM",
+".NET Framework NGEN v4.0.30319 Critical","4/15/2026 1:33:21 AM",
+".NET Framework NGEN v4.0.30319 64 Critical","4/15/2026 1:33:21 AM",
+"AD RMS Rights Policy Template Management (Manual)","11/30/1999 12:00:00 AM",
+"PolicyConverter","11/30/1999 12:00:00 AM",
+".NET Framework NGEN v4.0.30319","5/5/2026 1:16:10 PM",
+"98_Shadow_Part1","5/5/2026 4:35:00 PM",
+"S-1-5-21-304280179-440706133-145769141-1001","11/30/1999 12:00:00 AM",
+"Office Performance Monitor","11/30/1999 12:00:00 AM",
+"99_Shadow_Part2","11/30/1999 12:00:00 AM",
+"RecoverabilityToastTask","4/14/2026 10:45:44 PM",
+"StartupAppTask","5/4/2026 1:33:27 PM",
+".NET Framework NGEN v4.0.30319 64","5/5/2026 1:16:10 PM",
+"appuriverifierinstall","5/6/2026 9:33:15 AM",
+"appuriverifierdaily","5/5/2026 1:05:55 PM",
+"MareBackup","11/30/1999 12:00:00 AM",
+"Office Feature Updates Logon","11/30/1999 12:00:00 AM",
+"Microsoft Compatibility Appraiser Exp","11/30/1999 12:00:00 AM",
+"SdbinstMergeDbTask","11/30/1999 12:00:00 AM",
+"VerifiedPublisherCertStoreCheck","11/30/1999 12:00:00 AM",
+"UbtFrameworkService","4/15/2026 6:34:05 AM",
+"E1_Validation_2015","5/5/2026 12:50:00 PM",
+"E1_Shadow_Relay_2016","5/5/2026 3:30:00 PM",
+"E1_Validation_Relay_P3","5/5/2026 4:30:00 PM",
+"E1_Overnight_P2","5/5/2026 2:00:00 AM",
+"E1_Shadow_Relay_2015","5/5/2026 12:30:00 PM",
+"ACCBackgroundApplication","4/15/2026 6:32:05 AM",
+"Acer Collection Monitor Application","4/15/2026 6:29:35 AM",
+"E1_Infrastructure_Test_10AM","5/5/2026 10:00:00 AM",
+"Acer Collection Application","4/15/2026 6:32:05 AM",
+"NitroSense","4/15/2026 6:29:08 AM",
+"Power Button","4/15/2026 6:32:05 AM",
+"NvNodeLauncher_{B2FE1952-0186-46C3-BAEC-A80AA35AC5B8}","5/6/2026 6:29:05 AM",
+"OneDrive Startup Task-S-1-5-21-304280179-440706133-145769141-1001","4/15/2026 6:39:05 AM",
+"Software Update Application","4/15/2026 6:29:05 AM",
+"Quick Access","4/15/2026 6:29:35 AM",
+"NvTmMon_{B2FE1952-0186-46C3-BAEC-A80AA35AC5B8}","5/6/2026 9:31:05 AM",
+"NVIDIA GeForce Experience SelfUpdate_{B2FE1952-0186-46C3-BAEC-A80AA35AC5B8}","11/30/1999 12:00:00 AM",
+"NvProfileUpdaterOnLogon_{B2FE1952-0186-46C3-BAEC-A80AA35AC5B8}","4/15/2026 6:31:05 AM",
+"NvTmRepOnLogon_{B2FE1952-0186-46C3-BAEC-A80AA35AC5B8}","4/15/2026 6:31:05 AM",
+"SyspartRepair","11/30/1999 12:00:00 AM",
+"Driver Recovery on Reboot","11/30/1999 12:00:00 AM",
+"ScheduledDefrag","4/30/2026 11:33:01 PM",
+"CreateObjectTask","11/30/1999 12:00:00 AM",
+"UnexpectedCodepath","5/5/2026 1:19:34 PM",
+"Proxy","4/15/2026 2:13:19 AM",
+"BitLocker MDM policy Refresh","11/30/1999 12:00:00 AM",
+"UserTask","5/6/2026 6:29:05 AM",
+"ProactiveScan","5/5/2026 1:05:55 PM",
+"Restore","11/30/1999 12:00:00 AM",
+"Data Integrity Scan","11/30/1999 12:00:00 AM",
+"Data Integrity Scan for Crash Recovery","11/30/1999 12:00:00 AM",
+"maintenancetasks","5/5/2026 1:16:09 PM",
+"UsbCeip","5/2/2026 2:01:39 PM",
+"UserTask-Roam","4/14/2026 10:45:14 PM",
+"RecommendedTroubleshootingScanner","2/26/2025 11:25:34 AM",
+"UninstallDeviceTask","11/30/1999 12:00:00 AM",
+"Microsoft-Windows-DiskDiagnosticResolver","11/30/1999 12:00:00 AM",
+"Backup","5/5/2026 1:05:55 PM",
+"CleanupTemporaryState","5/3/2026 12:33:37 PM",
+"Pre-staged app cleanup","2/27/2025 5:01:45 PM",
+"DsSvcCleanup","5/5/2026 1:05:55 PM",
+"BitLocker Encrypt All Drives","11/30/1999 12:00:00 AM",
+"Device User","4/15/2026 7:29:41 AM",
+"DirectXDatabaseUpdater","5/2/2026 12:26:38 AM",
+"Scheduled","4/30/2026 12:24:56 PM",
+"BgTaskRegistrationMaintenanceTask","5/4/2026 1:33:27 PM",
+"Microsoft-Windows-DiskDiagnosticDataCollector","4/14/2025 4:19:35 PM",
+"SilentCleanup","5/6/2026 9:40:44 AM",
+"SoftLandingTriggerTask-128000000001615609-render-{568ef499-29c7-448c-b4cf-382d463eee38}","5/6/2026 4:05:24 AM","5/6/2026 10:02:24 AM"
+"SoftLandingDeferralTask-{c7c998c9-bd28-40d0-a2c7-18e00f00e86b}","5/6/2026 9:50:01 AM","5/6/2026 10:05:00 AM"
+"G2MUpdateTask-S-1-5-21-304280179-440706133-145769141-1001","5/6/2026 9:06:01 AM","5/6/2026 10:06:00 AM"
+"BootstrapUsageDataReporting","7/10/2025 9:44:43 AM","5/6/2026 10:07:23 AM"
+"ZoomUpdateTaskUser-S-1-5-21-304280179-440706133-145769141-1001","5/6/2026 9:34:58 AM","5/6/2026 10:34:56 AM"
+"Office Actions Server","11/30/1999 12:00:00 AM","5/6/2026 11:00:00 AM"
+"G2MUploadTask-S-1-5-21-304280179-440706133-145769141-1001","5/6/2026 9:13:01 AM","5/6/2026 11:13:00 AM"
+"08a_Yahoo_Macro_1120am","5/5/2026 11:20:01 AM","5/6/2026 11:20:00 AM"
+"Office Background Push Maintenance","5/5/2026 11:21:22 AM","5/6/2026 11:21:21 AM"
+"Office Feature Updates","5/6/2026 9:50:00 AM","5/6/2026 11:46:37 AM"
+"Consolidator","5/6/2026 6:00:01 AM","5/6/2026 12:00:00 PM"
+"UnifiedConsentSyncTask","5/6/2026 9:35:44 AM","5/6/2026 12:05:35 PM"
+"09a_Yahoo_Macro_1220pm","5/5/2026 12:20:01 PM","5/6/2026 12:20:00 PM"
+"QueueReporting","5/6/2026 9:31:20 AM","5/6/2026 12:22:45 PM"
+"NvProfileUpdaterDaily_{B2FE1952-0186-46C3-BAEC-A80AA35AC5B8}","5/5/2026 12:25:22 PM","5/6/2026 12:25:21 PM"
+"NvTmRep_{B2FE1952-0186-46C3-BAEC-A80AA35AC5B8}","5/5/2026 12:25:22 PM","5/6/2026 12:25:21 PM"
+"NvDriverUpdateCheckDaily_{B2FE1952-0186-46C3-BAEC-A80AA35AC5B8}","5/5/2026 12:25:23 PM","5/6/2026 12:25:22 PM"
+"07_Midday_Quotes","5/5/2026 12:30:00 PM","5/6/2026 12:30:00 PM"
+"RefreshCache","5/6/2026 9:28:06 AM","5/6/2026 12:49:06 PM"
+"PowerGridForecastTask","5/5/2026 10:38:06 PM","5/6/2026 12:50:23 PM"
+"Adobe Acrobat Update Task","5/6/2026 6:41:05 AM","5/6/2026 1:00:00 PM"
+"Storage Tiers Optimization","11/30/1999 12:00:00 AM","5/6/2026 1:00:00 PM"
+"UpdateAssistantCalendarRun","11/10/2019 9:11:16 PM","5/6/2026 1:12:53 PM"
+"08_News_Pipeline","5/5/2026 1:30:00 PM","5/6/2026 1:30:00 PM"
+"10a_Yahoo_Macro_0240pm","5/5/2026 2:40:01 PM","5/6/2026 2:40:00 PM"
+"09_Regime_Watchdog","5/5/2026 2:55:00 PM","5/6/2026 2:55:00 PM"
+"10_Daily_Scanner","5/5/2026 3:00:00 PM","5/6/2026 3:00:00 PM"
+"11_Alpaca_Execution","5/5/2026 3:40:00 PM","5/6/2026 3:40:00 PM"
+"12_EOD_Reconciliation","5/5/2026 4:05:00 PM","5/6/2026 4:05:00 PM"
+"PcaPatchDbTask","5/6/2026 4:40:42 AM","5/6/2026 4:17:08 PM"
+"00_Log_Cleanup","5/5/2026 4:30:01 PM","5/6/2026 4:30:00 PM"
+"OneDrive Reporting Task-S-1-5-21-304280179-440706133-145769141-1001","5/5/2026 9:48:55 PM","5/6/2026 9:48:54 PM"
+"OneDrive Standalone Update Task-S-1-5-21-304280179-440706133-145769141-1001","5/5/2026 8:05:35 PM","5/6/2026 11:10:33 PM"
+"Data Integrity Check And Scan","11/30/1999 12:00:00 AM","5/6/2026 11:41:18 PM"
+"01_SimFin_Overnight","5/5/2026 11:45:01 PM","5/6/2026 11:45:00 PM"
+"Backup","4/29/2026 8:42:58 AM","5/6/2026 11:55:04 PM"
+"02_DoltHub_Overnight","5/6/2026 12:11:01 AM","5/7/2026 12:11:00 AM"
+"MapsUpdateTask","11/30/1999 12:00:00 AM","5/7/2026 1:13:50 AM"
+"LicenseAcquisition","11/30/1999 12:00:00 AM","5/7/2026 2:13:21 AM"
+"IntelligentPwdlessTask","5/6/2026 3:00:01 AM","5/7/2026 3:00:00 AM"
+"SoftLandingCreativeManagementTask","5/6/2026 4:05:24 AM","5/7/2026 3:05:18 AM"
+"Device","5/6/2026 3:45:59 AM","5/7/2026 3:12:45 AM"
+"Monitoring","5/6/2026 3:17:20 AM","5/7/2026 3:25:30 AM"
+"AD RMS Rights Policy Template Management (Automated)","11/30/1999 12:00:00 AM","5/7/2026 3:50:42 AM"
+"UpdateAssistantWakeupRun","11/10/2019 9:11:16 PM","5/7/2026 4:27:41 AM"
+"02a_Yahoo_Macro_0600am","5/6/2026 6:00:01 AM","5/7/2026 6:00:00 AM"
+"Office ClickToRun Service Monitor","5/6/2026 9:52:51 AM","5/7/2026 6:31:01 AM"
+"03_Schwab_History","5/6/2026 7:00:00 AM","5/7/2026 7:00:00 AM"
+"04_VIX_Sentinel","5/6/2026 7:15:00 AM","5/7/2026 7:15:00 AM"
+"04_Yahoo_Async","5/6/2026 7:25:00 AM","5/7/2026 7:25:00 AM"
+"05_FRED_Refresh","5/6/2026 7:47:01 AM","5/7/2026 7:47:00 AM"
+"06_Build_Daily","5/6/2026 8:00:01 AM","5/7/2026 8:00:00 AM"
+"06a_Yahoo_Macro_0810am","5/6/2026 8:10:01 AM","5/7/2026 8:10:00 AM"
+"06a_Yahoo_Macro_0814am","5/6/2026 8:14:01 AM","5/7/2026 8:14:00 AM"
+"06b_Yahoo_RSS_News","5/6/2026 8:15:01 AM","5/7/2026 8:15:00 AM"
+"Office Automatic Updates 2.0","5/6/2026 9:40:44 AM","5/7/2026 8:18:52 AM"
+"Office Startup Maintenance","5/6/2026 8:03:39 AM","5/7/2026 8:29:01 AM"
+"06c_Macro_Dashboard","5/6/2026 8:30:00 AM","5/7/2026 8:30:00 AM"
+"05a_EDGAR_Actions","5/6/2026 8:45:01 AM","5/7/2026 8:45:00 AM"
+"StrategyE1_MorningAudit","5/6/2026 9:07:01 AM","5/7/2026 9:07:00 AM"
+"05b_Morning_Quotes","5/6/2026 9:35:00 AM","5/7/2026 9:35:00 AM"
+"07a_Yahoo_Macro_0950am","5/6/2026 9:50:01 AM","5/7/2026 9:50:00 AM"
+"ScanForUpdates","5/6/2026 5:43:13 AM","5/7/2026 9:57:03 AM"
+"WakeUpAndScanForUpdates","11/30/1999 12:00:00 AM","5/7/2026 7:58:56 PM"
+"PrintJobCleanupTask","2/27/2026 1:56:07 PM","5/8/2026 12:00:00 PM"
+"12_Weekly_Pipeline","5/2/2026 2:00:00 AM","5/9/2026 2:00:00 AM"
+"SetupRecoveryDataTask","4/30/2026 6:02:03 PM","5/13/2026 11:35:42 PM"
+"BackupNonMaintenance","5/2/2026 1:12:49 AM","5/16/2026 3:35:58 AM"
+"PrinterCleanupTask","4/29/2026 12:00:01 PM","5/29/2026 12:00:00 PM"
+"13_Monthly_Comparison","5/1/2026 8:00:00 AM","6/1/2026 8:00:00 AM"
