@@ -16,7 +16,7 @@ Strategy E1 is a **Quality-First Ensemble** (primarily PEAD-driven in Phase 1) d
 
 ### Core Governance Rules
 - **The 0.65 Gate**: No trade is entered unless the ensemble score hits **0.65** (Healthy) or **0.60** (Bear).
-- **The 20-Day Horizon**: The strategy exits primarily on time (20 trading days). This duration is based on the **IC Half-Life** observed in PEAD momentum signals, where predictive alpha significantly decays after 22 sessions. *Note: 15/25/30-day sensitivity testing is scheduled for Phase 3 Research.*
+- **The 20-Day Horizon**: The strategy exits primarily on time (**20 trading days**). *Note: Trading day counts are authoritative and MUST use `refined.price_history` as the strategy's trading calendar to eliminate calendar-day drift and holiday-lag artifacts.*
 - **Circuit Breaker**: Every position is protected by a **6.0x ATR** hard stop-loss.
 - **Breakeven Progression**: (ACTIVE) Stop advances to entry (+0.01) once price touches **+1.5x ATR** above entry.
 - **Decay Veto**: (ACTIVE) Positions are exited early if the live ensemble score collapses by **40%** from the entry score. (Evidence: Test E showed that 50% decay conflicts with breakeven progression — the two controls interact and must be calibrated together).
@@ -60,6 +60,7 @@ The standard position size is further multiplied by a scalar derived from VIX an
 | **Panic Recovery** (VIX > 30, HY < 5.5) | **1.25x** | Best historical expectancy bucket. |
 | **Credit Stress** (HY > 4.5, BEAR) | **0.50x** | Systematic de-risking in high-stress regimes. |
 | **Credit Veto** (HY > 5.5, FRAGILE) | **0.00x** | Hard stop — avoids systemic "Black Swan" events. |
+| **FRED Staleness** (Data > 3 days) | **Fallback** | Use Last Known Value + VIX Circuit Breaker (VIX > 35 limits scalar to 0.50). |
 | **Normal / Calm** | **1.00x** | Baseline allocation. |
 
 ### 3.3 Known Sizing Properties & Artifacts
@@ -132,11 +133,11 @@ All budget adjustments must be logged to `sandbox.e1_sector_caps_history` daily.
 
 ### 6.1 Rolling Vital Signs (60-Session Window)
 
-The Alpha Audit Engine (`e1_monitor.py`) computes these metrics every EOD to ensure the live portfolio aligns with the V1.4 Payoff Profile. A consecutive-window escalation rule is enforced: two sequential windows in WARNING state automatically trigger a CRITICAL escalation.
+The Alpha Audit Engine (`e1_monitor.py`) computes these metrics every EOD to ensure the live portfolio aligns with the V1.4 Payoff Profile. A consecutive-window escalation rule is enforced: two sequential **30-trade** windows in WARNING state automatically trigger a CRITICAL escalation (Threshold Audit).
 
 | Metric | Target | Warning Threshold | Action |
 | :--- | :--- | :--- | :--- |
-| **T2 Hit Rate** | $\ge$ 15% | < 10% (2 consecutive) | Full Weight & Threshold Audit |
+| **T2 Hit Rate** | $\ge$ 15% | < 10% (2 consecutive) | Threshold Weight & Trigger Audit |
 | **BE Stop Ratio** | $\ge$ 75% | < 50% | T1/T2 Distance Review |
 | **Time Exit PnL (HEALTHY)** | $\ge$ -$20/trade | < -$50/trade (2 consecutive) | Shorten Time-Exit to 12 days |
 | **Time Exit PnL (BEAR)** | $\ge$ -$80/trade | < -$110/trade | Acceptable (2022 Baseline) |
@@ -200,6 +201,12 @@ Before promoting *any* configuration change (e.g., floor adjustments, risk % cha
 
 The gap between the specification and the intermediate dump is where the bugs live.
 
+### 9.1 Atomic Transactional Integrity (F-07)
+To prevent "Ghost Trades" and orphan database records, every entry must follow the **Atomic Sequence**:
+1. **Database Write**: INSERT the position record first and retrieve the `RETURNING id`.
+2. **Broker Submission**: Submit the bracket order to the API.
+3. **Compensating Delete**: If broker submission fails, the DB record must be immediately `DELETED` to prevent reconciliation drift.
+
 ---
 
 ## 10. Shadow Rule Governance (Promoted April 30, 2026)
@@ -219,6 +226,8 @@ These rules are active in `e1_trader.py`. Any veto triggered by these rules must
 ## 11. Appendix: Post-Mortem Lessons (April 30, 2026)
 - **Production/Backtest Divergence (Data-Gate Failure)**: Implementing auxiliary filters (Short Float, Piotroski) as INNER JOINs in production when the backtest did not use them caused the silent filtering of high-alpha candidates (e.g., GEV). Fix: Use LEFT JOINs for optional guards.
 - **Non-Idempotent Reruns**: Rerunning the trader without checking Pending Orders led to the TSLA double-buy. Fix: Entry-guard must check for open orders.
+- **Temporal Drift (F-14)**: Calendar-day time exits undercount holding periods; enforced trading-day session counts via price history.
+- **Null-Safe IDs (F-15)**: Database ID casting must use null-safe wrappers (`pd.isna` checks) to prevent crashing on stale or malformed position identifiers.
 
 ## 12. Post-Market Stability Guards (Added May 2, 2026)
 Following the May 1st recovery, the following "Robustness" guards are mandatory for the E1 Production Engine:
@@ -227,6 +236,7 @@ Following the May 1st recovery, the following "Robustness" guards are mandatory 
 - **Zero-Price Guard (Ghost Liquidation Prevention)**: The lifecycle engine must explicitly skip any ticker where the Alpaca quote returns `$0.00` or `None`. This prevents the engine from misinterpreting a post-market data gap or holiday close as a 100% stop-loss violation.
 - **Validation-Error Veto**: The engine must never trigger an "Emergency Liquidation" based solely on an Alpaca API error code (e.g., `42210000`). Liquidation must only occur if a price violation is mathematically confirmed by the logic.
 - **Recursive Stop Check (F-11)**: The reconciliation engine MUST check both top-level orders and nested legs (OCO/Bracket) when verifying protection state. Stop detection must be robust to Enum string prefixes (e.g., matching `ordertype.stop` vs `stop`).
+- **Multi-Stage Heal Fallback (F-08)**: If a bracket order fails to restore during reconciliation, the system must attempt a Stop-Only fallback. If that fails, an Emergency Market Exit and Telegram escalation are mandatory to prevent unprotected exposure.
 
 ---
 

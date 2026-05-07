@@ -902,7 +902,7 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
     
     opened_count = 0
     deployed_dollars = 0.0
-    processed_entries = []
+    processed_entries = [] # Tracked for Mandatory Intermediate Value Dump (§9)
     
     # ── BUDGETING 2.0: Portfolio Snapshot ────────────────────────────────
     # Calculate current Market Value and Stock Count per Sector AFTER exits

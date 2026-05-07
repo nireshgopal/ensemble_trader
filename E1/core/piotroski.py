@@ -160,10 +160,64 @@ def _get_quarterly_pair(con, ticker):
         return None, None
 
 
+def get_precomputed_fscore(con, ticker, sim_date=None):
+    """
+    Fetch a pre-computed Piotroski score from refined.e1_piotroski_history.
+    This is the primary authoritative source for PIT-safe scores.
+
+    Returns dict or None if no score found.
+    """
+    try:
+        query = """
+            SELECT f_score_raw, f_score_norm, filing_date, thin_score_flag, status, variant
+            FROM refined.e1_piotroski_history
+            WHERE ticker = ?
+              AND (? IS NULL OR score_date <= CAST(? AS DATE))
+            ORDER BY score_date DESC, filing_date DESC
+            LIMIT 1
+        """
+        sim_date_str = sim_date.isoformat() if sim_date else None
+        row = con.execute(query, [ticker, sim_date_str, sim_date_str]).fetchone()
+
+        if row:
+            # Reconstruct the result dictionary to match compute_piotroski_live return contract
+            # Note: Individual points (1-9) and details are not stored in history,
+            # so we provide indicators that this was a pre-computed lookup.
+            f_score_raw = row[0]
+            filing_date = row[2]
+            status = row[4]
+            
+            # Staleness calculation relative to sim_date
+            staleness_days = None
+            if filing_date:
+                reference_date = sim_date if sim_date else date.today()
+                # Ensure filing_date is a date object
+                if isinstance(filing_date, str):
+                    f_dt = datetime.strptime(filing_date, '%Y-%m-%d').date()
+                elif hasattr(filing_date, 'date'):
+                    f_dt = filing_date.date()
+                else:
+                    f_dt = filing_date
+                staleness_days = (reference_date - f_dt).days
+
+            return {
+                'f_score': f_score_raw,
+                'points': {}, # Not stored in history
+                'detail': {0: f"Pre-computed from EDGAR ({status})"}, 
+                'source': f'edgar_{status.lower()}',
+                'staleness_days': staleness_days,
+                'warnings': [],
+            }
+    except Exception as e:
+        logger.warning(f"Failed to fetch pre-computed F-Score for {ticker}: {e}")
+    return None
+
+
 def compute_piotroski_live(ticker, con, sim_date=None):
     """Calculate 9-point Piotroski F-Score from multi-source data.
 
     Architecture:
+      Tier 0 (authoritative): refined.e1_piotroski_history (pre-computed XBRL)
       Tier 1 (absolute): Yahoo financialData (daily refresh)
       Tier 2 (delta): schwab_spot/simfin quarterly reports
 
@@ -171,10 +225,15 @@ def compute_piotroski_live(ticker, con, sim_date=None):
       f_score: int (0-9)
       points: dict {1: bool/None, ..., 9: bool/None}
       detail: dict {1: str, ..., 9: str}  -- human-readable explanation
-      source: str  -- 'hybrid', 'simfin_only', 'yahoo_tier1_only'
+      source: str  -- 'hybrid', 'simfin_only', 'yahoo_tier1_only', 'edgar_full', 'edgar_thin'
       staleness_days: int  -- days since most recent quarterly report
       warnings: list[str]
     """
+    # ── TIER 0: Authoritative Pre-computed Score ──────────────────────────
+    precomputed = get_precomputed_fscore(con, ticker, sim_date)
+    if precomputed:
+        return precomputed
+
     points = {}
     detail = {}
     warnings = []

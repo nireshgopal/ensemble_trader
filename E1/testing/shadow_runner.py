@@ -103,6 +103,7 @@ _original_get_yahoo_shares = piotroski._get_yahoo_shares
 
 _sim_date_for_piotroski: Optional[date] = None
 _FULL_FINANCIALS = {}
+_PIOTROSKI_HISTORY_CACHE = {}
 
 def load_financials_cache(con):
     global _FULL_FINANCIALS
@@ -115,44 +116,84 @@ def load_financials_cache(con):
 _YAHOO_CACHE = {}
 
 def prefetch_yahoo_financials(conn):
-    """Pre-extracts all Yahoo financialData into a fast memory cache."""
+    """
+    PIT-safe pre-extraction of Yahoo financials.
+    Loads ALL historical snapshots into memory to allow fast PIT lookups.
+    """
     global _YAHOO_CACHE
-    logger.info("[SHADOW] Pre-extracting Yahoo financials cache...")
-    # Fetch only the latest raw_json per ticker
-    rows = conn.execute("""
-        SELECT ticker, raw_json FROM yahoo.yahoo_raw
-        QUALIFY ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fetched_at DESC) = 1
-    """).fetchall()
+    logger.info("[SHADOW] Pre-extracting PIT-safe Yahoo financials cache...")
     
+    # Load all historical records ordered by fetched_at DESC
+    df = conn.execute("""
+        SELECT ticker, fetched_at, raw_json FROM yahoo.yahoo_raw
+        ORDER BY ticker, fetched_at DESC
+    """).df()
+    
+    _YAHOO_CACHE = {}
     import json
-    for ticker, raw_json in rows:
-        try:
-            raw = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
-            qs = raw.get('quoteSummary', {})
-            results = qs.get('result', [])
-            if results:
-                fd = results[0].get('financialData', {})
-                ds = results[0].get('defaultKeyStatistics', {})
-                def _val(d, key):
-                    v = d.get(key)
-                    if isinstance(v, dict): return v.get('raw')
-                    return v
-                
-                _YAHOO_CACHE[ticker] = {
-                    'operatingCashflow': _val(fd, 'operatingCashflow'),
-                    'freeCashflow': _val(fd, 'freeCashflow'),
-                    'returnOnAssets': _val(fd, 'returnOnAssets'),
-                    'returnOnEquity': _val(fd, 'returnOnEquity'),
-                    'grossMargins': _val(fd, 'grossMargins'),
-                    'currentRatio': _val(fd, 'currentRatio'),
-                    'totalDebt': _val(fd, 'totalDebt'),
-                    'totalRevenue': _val(fd, 'totalRevenue'),
-                    'totalCash': _val(fd, 'totalCash'),
-                    'sharesOutstanding': _val(ds, 'sharesOutstanding') or _val(fd, 'sharesOutstanding'),
-                }
-        except Exception:
-            continue
-    logger.info(f"[SHADOW] Cached Yahoo financials for {len(_YAHOO_CACHE)} tickers.")
+    for ticker, group in df.groupby('ticker'):
+        records = []
+        for _, row in group.iterrows():
+            try:
+                raw_json = row['raw_json']
+                raw = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
+                qs = raw.get('quoteSummary', {})
+                results = qs.get('result', [])
+                if results:
+                    fd = results[0].get('financialData', {})
+                    ds = results[0].get('defaultKeyStatistics', {})
+                    def _val(d, key):
+                        v = d.get(key)
+                        if isinstance(v, dict): return v.get('raw')
+                        return v
+                    
+                    records.append({
+                        'fetched_at': pd.to_datetime(row['fetched_at']).date(),
+                        'data': {
+                            'operatingCashflow': _val(fd, 'operatingCashflow'),
+                            'freeCashflow': _val(fd, 'freeCashflow'),
+                            'returnOnAssets': _val(fd, 'returnOnAssets'),
+                            'returnOnEquity': _val(fd, 'returnOnEquity'),
+                            'grossMargins': _val(fd, 'grossMargins'),
+                            'currentRatio': _val(fd, 'currentRatio'),
+                            'totalDebt': _val(fd, 'totalDebt'),
+                            'totalRevenue': _val(fd, 'totalRevenue'),
+                            'totalCash': _val(fd, 'totalCash'),
+                            'sharesOutstanding': _val(ds, 'sharesOutstanding') or _val(fd, 'sharesOutstanding'),
+                        }
+                    })
+            except Exception:
+                continue
+        _YAHOO_CACHE[ticker] = records
+    logger.info(f"[SHADOW] Cached PIT history for {len(_YAHOO_CACHE)} tickers.")
+
+def prefetch_piotroski_history(conn):
+    """
+    Loads all pre-computed F-Scores from refined.e1_piotroski_history into memory.
+    Bypasses the need for hundreds of thousands of SQL queries during backtests.
+    """
+    global _PIOTROSKI_HISTORY_CACHE
+    logger.info("[SHADOW] Pre-fetching pre-computed Piotroski history cache...")
+    
+    df = conn.execute("""
+        SELECT ticker, score_date, filing_date, f_score_raw, status
+        FROM refined.e1_piotroski_history
+        ORDER BY ticker, score_date DESC, filing_date DESC
+    """).df()
+    
+    _PIOTROSKI_HISTORY_CACHE = {}
+    for ticker, group in df.groupby('ticker'):
+        # Store as list of dicts for PIT filtering
+        records = []
+        for _, row in group.iterrows():
+            records.append({
+                'score_date': pd.to_datetime(row['score_date']).date(),
+                'filing_date': pd.to_datetime(row['filing_date']).date(),
+                'f_score': int(row['f_score_raw']),
+                'status': row['status']
+            })
+        _PIOTROSKI_HISTORY_CACHE[ticker] = records
+    logger.info(f"[SHADOW] Cached {len(df)} pre-computed scores for {len(_PIOTROSKI_HISTORY_CACHE)} tickers.")
 
 def setup_sim_short_float(conn, sim_date: date):
     """Creates a fast temporary table for point-in-time short float."""
@@ -183,23 +224,72 @@ class DuckDBProxy:
         return getattr(self._conn, name)
 
 def _point_in_time_extract_yahoo_financials(con, ticker, sim_date=None):
-    """Uses the pre-extracted Yahoo cache for shadow speed."""
-    return _YAHOO_CACHE.get(ticker)
+    """
+    PIT-safe lookup in the Yahoo history cache.
+    Finds the latest record that was available ON or BEFORE the simulation date.
+    """
+    history = _YAHOO_CACHE.get(ticker, [])
+    if not history:
+        return None
+        
+    pit_date = sim_date or _sim_date_for_piotroski or date.today()
+    for record in history:
+        if record['fetched_at'] <= pit_date:
+            return record['data']
+            
+    return None # No data available at this time
 
 def _point_in_time_get_yahoo_shares(con, ticker, sim_date=None):
-    """Uses the latest available Yahoo shares without PIT filtering for shadow speed."""
-    return _original_get_yahoo_shares(con, ticker, sim_date=None)
+    """PIT-safe shares lookup from the historical cache."""
+    data = _point_in_time_extract_yahoo_financials(con, ticker, sim_date)
+    if data:
+        return data.get('sharesOutstanding')
+    return None
 
 def _point_in_time_quarterly_pair(con, ticker):
     """
-    Non-PIT version for shadow mode speed.
-    Uses the latest available data as per '2026-vintage' disclosure.
+    PIT-aware version for shadow mode.
+    Filters the global financials cache to only include reports available by _sim_date_for_piotroski.
     """
     all_fins = _FULL_FINANCIALS.get(ticker, [])
-    if len(all_fins) < 2:
+    if not all_fins:
         return None, None
-    # No PIT filtering -- just take the two most recent reports
-    return all_fins[0], all_fins[1]
+        
+    # Filter by report_date
+    pit_date = _sim_date_for_piotroski or date.today()
+    pit_fins = [f for f in all_fins if pd.to_datetime(f['report_date']).date() <= pit_date]
+    
+    if len(pit_fins) < 2:
+        return None, None
+        
+    # pit_fins is ordered by report_date DESC in the original load_financials_cache query
+    return pit_fins[0], pit_fins[1]
+
+def _point_in_time_get_precomputed_fscore(con, ticker, sim_date=None):
+    """PIT-safe lookup for pre-computed F-Scores from memory cache."""
+    history = _PIOTROSKI_HISTORY_CACHE.get(ticker, [])
+    if not history:
+        return None
+        
+    pit_date = sim_date or _sim_date_for_piotroski or date.today()
+    for record in history:
+        if record['score_date'] <= pit_date:
+            # Reconstruct the result dictionary to match piotroski.py contract
+            f_score = record['f_score']
+            f_dt = record['filing_date']
+            status = record['status']
+            
+            staleness_days = (pit_date - f_dt).days
+            
+            return {
+                'f_score': f_score,
+                'points': {},
+                'detail': {0: f"Pre-computed from EDGAR ({status}) [PIT CACHED]"},
+                'source': f'edgar_{status.lower()}',
+                'staleness_days': staleness_days,
+                'warnings': [],
+            }
+    return None
 
 def set_piotroski_sim_date(sim_date: date):
     global _sim_date_for_piotroski
@@ -207,6 +297,7 @@ def set_piotroski_sim_date(sim_date: date):
     piotroski._get_quarterly_pair = _point_in_time_quarterly_pair
     piotroski._extract_yahoo_financials = _point_in_time_extract_yahoo_financials
     piotroski._get_yahoo_shares = _point_in_time_get_yahoo_shares
+    piotroski.get_precomputed_fscore = _point_in_time_get_precomputed_fscore
 
 # =============================================================================
 # TELEGRAM PATCH — sends as [SIM] prefix, not silenced
@@ -481,6 +572,7 @@ def run_shadow(start: date, end: date, inject_scenario: Optional[str] = None,
     # Load financials cache for Piotroski PIT
     load_financials_cache(conn)
     prefetch_yahoo_financials(conn)
+    prefetch_piotroski_history(conn)
 
     # -------------------------------------------------------------------------
     # MAIN DAY LOOP
@@ -545,6 +637,10 @@ def run_shadow(start: date, end: date, inject_scenario: Optional[str] = None,
     piotroski._get_quarterly_pair = _original_get_quarterly_pair
     piotroski._extract_yahoo_financials = _original_extract_yahoo
     piotroski._get_yahoo_shares = _original_get_yahoo_shares
+    # Note: get_precomputed_fscore didn't have an original patch in this script
+    # but we should restore it to the real function if possible.
+    from E1.core.piotroski import get_precomputed_fscore as real_get_fscore
+    piotroski.get_precomputed_fscore = real_get_fscore
 
     generate_report(conn, sim_run_id, start, end)
     conn.close()
