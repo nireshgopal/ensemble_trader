@@ -284,9 +284,36 @@ To prevent pathological cases:
 
 ---
 
-## 8. Integration into Sizing Chain
+## 8. Implementation: Schema & Storage
 
-### 8.1 Sizing Formula
+### 8.1 Lookup Table DDL
+
+The CTE lookup table is stored in `sandbox.e1_cte_lookup` and must be rebuilt whenever the training set or shrinkage parameters change.
+
+```sql
+CREATE TABLE IF NOT EXISTS sandbox.e1_cte_lookup (
+    entry_regime      VARCHAR,       -- HEALTHY / FRAGILE / BEAR
+    vix_bucket        VARCHAR,       -- LOW / NORMAL / ELEVATED / PANIC
+    f3_feature        VARCHAR,       -- dominant_cluster or other (if IC passed)
+    trade_count       INTEGER,       -- Raw n
+    episode_count     INTEGER,       -- Independent regime episodes
+    raw_avg_pnl       FLOAT,         -- Unshrunk mean
+    shrunk_avg_pnl    FLOAT,         -- Bayesian shrunk mean (primary signal)
+    global_avg_pnl    FLOAT,         -- The prior used for shrinkage
+    pnl_stddev        FLOAT,         -- Confidence interval driver
+    t2_hit_rate       FLOAT,         -- Secondary guard metric
+    data_quality      VARCHAR,       -- WEAK / MODERATE
+    cte_multiplier    FLOAT,         -- Final [0.90, 1.10] scalar
+    last_updated      TIMESTAMP,     -- Rebuild audit trail
+    PRIMARY KEY (entry_regime, vix_bucket, f3_feature)
+);
+```
+
+---
+
+## 9. Integration into Sizing Chain
+
+### 9.1 Sizing Formula
 
 The E1 sizing chain becomes:
 
@@ -304,7 +331,7 @@ Where:
 - `cte_multiplier ∈ [0.90, 1.10]` (new)  
 - `S10_macro_scalar ∈ [0.0, 1.25]` (0 for credit veto, up to 1.25 for Panic Recovery)
 
-### 8.2 Combined Scalar Cap
+### 9.2 Combined Scalar Cap
 
 Define:
 
@@ -326,7 +353,7 @@ Final risk:
 
 This ensures that **no combination** of high conviction, favorable CTE, and Panic Recovery S10 can exceed 1.50× base risk.
 
-### 8.3 Logging Requirements
+### 9.3 Logging Requirements
 
 On every new entry, the following must be logged to `sandbox.e1positions`:
 
@@ -341,14 +368,14 @@ These fields enable future attribution and drift monitoring.
 
 ---
 
-## 9. Operational Phases & Walk‑Forward Validation
+## 10. Operational Phases & Walk‑Forward Validation
 
-### 9.1 Phase 0 — Offline Training
+### 10.1 Phase 0 — Offline Training
 
-- Build initial CTE lookup table from simulation (`cte_training%` runs) using the procedure above.  
+- Build initial CTE lookup table from simulation (`ANNUAL_AUDIT_%` runs) using the procedure above.  
 - No impact on live or paper sizing; this is an offline calibration step.
 
-### 9.2 Phase 1 — Logging‑Only Paper Mode
+### 10.2 Phase 1 — Logging‑Only Paper Mode
 
 For at least **60 paper trading sessions**:
 
@@ -366,7 +393,7 @@ Goal: directional sanity check (high‑CTE buckets should not systematically und
 
 Phase 1 is explicitly **exploratory**, not a statistically powerful activation test.
 
-### 9.3 Phase 2 — Controlled Activation
+### 10.3 Phase 2 — Controlled Activation
 
 If Phase 1 shows no obvious inversion:
 
@@ -376,7 +403,7 @@ If Phase 1 shows no obvious inversion:
 
 Other cells remain at `cte_multiplier = 1.00` until they accumulate more evidence.
 
-### 9.4 Ongoing Monitoring & De‑Activation
+### 10.4 Ongoing Monitoring & De‑Activation
 
 CTE is continuously monitored:
 
@@ -387,7 +414,7 @@ CTE never becomes “set and forget”; it is a live hypothesis that must earn i
 
 ---
 
-## 10. Limitations & Honest Statements
+## 11. Limitations & Honest Statements
 
 1. **Single historical path**  
    The 2014–2026 dataset is one realized market path that has been used repeatedly in E1’s design. The 18.1% CAGR backtest is an optimistic upper bound, not a guaranteed baseline. Paper/live trading is the first true out‑of‑sample. CTE cannot change this and must prove its value in walk‑forward data.
@@ -403,7 +430,7 @@ CTE never becomes “set and forget”; it is a live hypothesis that must earn i
 
 ---
 
-## 11. Summary
+## 12. Summary
 
 CTE V1.1 is a **shrunk, distribution‑aware, walk‑forward‑validated contextual sizer**:
 
