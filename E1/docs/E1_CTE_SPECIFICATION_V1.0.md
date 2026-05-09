@@ -218,8 +218,10 @@ The CTE multiplier is inserted between conviction scalar and S10 scalar. It cann
 ## 7. Implementation Plan
 
 ### Step 1: Build the Simulation Dataset (Pre-requisite)
+The CTE training set is restricted to the **"Audit Gold"** dataset. Any trades with a `sim_run_id` not listed below are considered experimental noise and must be excluded from the training query.
 
-Run the full 2014–present replay using the shadow runner with `sim_run_id` set to a dedicated identifier (e.g., `cte_training_v1`). This produces the complete `sandbox.e1positions` table with all trades, regimes, outcomes, and metadata.
+**Authoritative Simulation Run IDs (2014–2026 Audit):**
+- `ANNUAL_AUDIT_2014` through `ANNUAL_AUDIT_2026` (13 unique IDs)
 
 **Required columns** in the simulation output:
 - `entry_regime`, `dominant_cluster`, `exit_trigger`, `pnl_dollars`, `pnl_pct`, `days_held`, `stop_stage`
@@ -265,7 +267,7 @@ WITH vix_bucketed AS (
         ON CAST(p.entry_date AS DATE) = m.date
     WHERE p.status = 'CLOSED'
       AND p.exit_trigger != 'ALPACA_SYNC_DESYNC'
-      AND p.sim_run_id LIKE 'cte_training%'
+      AND p.sim_run_id LIKE 'ANNUAL_AUDIT_%'
 ),
 baseline AS (
     SELECT AVG(CASE WHEN exit_trigger LIKE 'Target 2%' THEN 1.0 ELSE 0.0 END) AS baseline_t2
