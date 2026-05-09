@@ -18,7 +18,7 @@ ATR_TARGET_1 = 2.0            # Partial exit at +2x ATR
 ATR_TARGET_2 = 4.0            # Full exit at +4x ATR
 MAX_SECTOR_PCT = 0.25         # 25% max sector exposure
 SLIPPAGE_BPS = 5              # 5 basis points assumed
-TIME_STOP_DAYS = 40           # Max holding period without gain
+TIME_STOP_DAYS = 20           # Max holding period without gain
 
 # -- Regime-aware Limits (Transitioning to Sector Budgets) --
 MAX_POSITIONS_BY_REGIME = {'HEALTHY': 10, 'FRAGILE': 6, 'BEAR': 4} # Legacy reference
@@ -168,6 +168,13 @@ SIGNAL_WEIGHTS_PATH = "docs/signal_weights.json"
 MAX_POSITION_PCT_E1 = 0.15    # 15% max single position (E1 standard)
 E1_CASH_FLOOR = 0.15          # Core cash floor for E1 engine
 ENABLE_BETA_SWEEPER = False   # Master flag for L3 Beta Sweeper (Experimental)
+ATR_STOP_MULTIPLIERS = {
+    'HEALTHY': 6.0,
+    'FRAGILE': 7.0,
+    'BEAR': 8.0
+}
+ATR_TARGET_1 = 2.0
+ATR_TARGET_2 = 4.0
 
 # ── Sandbox Tables (V1.3 Parallel Build) ──────────────────────────────────
 # This ensures E1/ code only trades in the 'sandbox' schema.

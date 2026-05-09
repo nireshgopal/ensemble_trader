@@ -193,6 +193,16 @@ def prefetch_piotroski_history(conn):
                 'status': row['status']
             })
         _PIOTROSKI_HISTORY_CACHE[ticker] = records
+    
+    # DIAGNOSTIC
+    sample_tkrs = ['AAPL', 'MSFT', 'XOM', 'NVDA']
+    for t in sample_tkrs:
+        recs = _PIOTROSKI_HISTORY_CACHE.get(t, [])
+        if recs:
+            logger.info(f"[DIAG] {t} Cache: {len(recs)} records | Latest: {recs[0]['score_date']} | Oldest: {recs[-1]['score_date']}")
+        else:
+            logger.warning(f"[DIAG] {t} Cache: EMPTY")
+
     logger.info(f"[SHADOW] Cached {len(df)} pre-computed scores for {len(_PIOTROSKI_HISTORY_CACHE)} tickers.")
 
 def setup_sim_short_float(conn, sim_date: date):
@@ -272,8 +282,15 @@ def _point_in_time_get_precomputed_fscore(con, ticker, sim_date=None):
         return None
         
     pit_date = sim_date or _sim_date_for_piotroski or date.today()
+    
+    # TRACE FOR XOM
+    if ticker == 'XOM':
+        logger.info(f"[TRACE XOM] PIT Date: {pit_date} | Cache Size: {len(history)}")
+
     for record in history:
         if record['score_date'] <= pit_date:
+            if ticker == 'XOM':
+                logger.info(f"[TRACE XOM] MATCH FOUND: {record['score_date']} | Score: {record['f_score']}")
             # Reconstruct the result dictionary to match piotroski.py contract
             f_score = record['f_score']
             f_dt = record['filing_date']
@@ -291,12 +308,32 @@ def _point_in_time_get_precomputed_fscore(con, ticker, sim_date=None):
             }
     return None
 
-def set_piotroski_sim_date(sim_date: date):
+def _strict_edgar_compute_piotroski(con, ticker, sim_date=None, **kwargs):
+    """Enforces EDGAR-only scores for OOS calibration validation."""
+    result = piotroski.get_precomputed_fscore(con, ticker, sim_date)
+    if result is not None:
+        # Update detail to reflect strict mode
+        result['detail'] = "Strict Authoritative XBRL"
+        result['source'] = "edgar_full"
+        return result
+    
+    # Return a 0-score dictionary to signal a veto without crashing the engine
+    return {
+        "f_score": 0,
+        "source": "STRICT_VETO",
+        "detail": "No EDGAR history (Strict Mode)",
+        "staleness_days": 999
+    }
+
+def set_piotroski_sim_date(sim_date: date, strict=False):
     global _sim_date_for_piotroski
     _sim_date_for_piotroski = sim_date
-    piotroski._get_quarterly_pair = _point_in_time_quarterly_pair
-    piotroski._extract_yahoo_financials = _point_in_time_extract_yahoo_financials
-    piotroski._get_yahoo_shares = _point_in_time_get_yahoo_shares
+    if strict:
+        piotroski.compute_piotroski_live = _strict_edgar_compute_piotroski
+    else:
+        piotroski._get_quarterly_pair = _point_in_time_quarterly_pair
+        piotroski._extract_yahoo_financials = _point_in_time_extract_yahoo_financials
+        piotroski._get_yahoo_shares = _point_in_time_get_yahoo_shares
     piotroski.get_precomputed_fscore = _point_in_time_get_precomputed_fscore
 
 # =============================================================================
@@ -520,7 +557,8 @@ def generate_report(conn, sim_run_id: str, start: date, end: date):
 # =============================================================================
 
 def run_shadow(start: date, end: date, inject_scenario: Optional[str] = None,
-               reset: bool = False, verbose: bool = False, run_id: Optional[str] = None):
+               reset: bool = False, verbose: bool = False, run_id: Optional[str] = None,
+               strict_edgar: bool = False):
 
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -583,7 +621,7 @@ def run_shadow(start: date, end: date, inject_scenario: Optional[str] = None,
         logger.info(f"{'─'*55}")
 
         # Patch Piotroski with today's sim_date for point-in-time F-Score
-        set_piotroski_sim_date(sim_date)
+        set_piotroski_sim_date(sim_date, strict=strict_edgar)
 
         # Patch Telegram with sim prefix
         patch_telegram(sim_date)
@@ -671,6 +709,8 @@ if __name__ == '__main__':
                         help='Initial capital for simulation (default: $50,000)')
     parser.add_argument('--run-id', type=str, default=None,
                         help='Custom simulation run identifier (e.g. cte_training_v1)')
+    parser.add_argument('--strict-edgar', action='store_true',
+                        help='Enforce EDGAR-only Piotroski scores (OOS Calibration Mode)')
 
     args = parser.parse_args()
 
@@ -685,4 +725,5 @@ if __name__ == '__main__':
         start_dt = date.fromisoformat(args.start)
         end_dt = date.fromisoformat(args.end) if args.end else date.today()
         run_shadow(start=start_dt, end=end_dt,
-                   inject_scenario=args.inject, reset=args.reset, verbose=args.verbose, run_id=args.run_id)
+                   inject_scenario=args.inject, reset=args.reset, verbose=args.verbose, 
+                   run_id=args.run_id, strict_edgar=args.strict_edgar)

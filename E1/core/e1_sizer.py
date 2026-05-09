@@ -6,19 +6,19 @@ from . import config
 logger = logging.getLogger(__name__)
 
 
-def compute_entry_levels(entry_price: float, atr_14: float, dominant_cluster: str) -> dict:
+def compute_entry_levels(entry_price: float, atr_14: float, dominant_cluster: str, regime: str = 'HEALTHY') -> dict:
     """
     Compute all price levels at entry. These are FIXED for the life of the trade.
     atr_14 is stored as atr_at_entry in the position row and never recomputed.
     
-    # Final Flash V1.3 Specification: Safety stop at 6.0x ATR
+    # Final Flash V1.3/V1.4 Specification: Safety stop at Regime-Gated ATR
     """
-    stop_mult = 6.0
+    stop_mult = config.ATR_STOP_MULTIPLIERS.get(regime, 6.0)
     be_mult = 1.5
     
     # Targets (V1.3 Consolidated)
-    t1_mult = 2.0
-    t2_mult = 4.0
+    t1_mult = config.ATR_TARGET_1
+    t2_mult = config.ATR_TARGET_2
     
     initial_stop      = round(entry_price - (atr_14 * stop_mult), 4)
     breakeven_trigger  = round(entry_price + (atr_14 * be_mult), 4)
@@ -128,8 +128,8 @@ def compute_position_size(
         risk_dollars = base_risk_dollars * conviction_mult * s10_scalar
         
         # 4. Raw Size Calculation
-        # Number of shares such that 6.0 * ATR move equals risk_dollars
-        stop_mult = 6.0 
+        # Number of shares such that [Regime] * ATR move equals risk_dollars
+        stop_mult = config.ATR_STOP_MULTIPLIERS.get(regime, 6.0) 
         stop_distance = atr_14 * stop_mult
         shares_raw = risk_dollars / stop_distance
         target_dollar_val = shares_raw * close_price

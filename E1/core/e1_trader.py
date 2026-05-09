@@ -1135,7 +1135,7 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
             
             # V1.3 Entry Levels: cluster-specific stops/targets with frozen ATR
             atr_14_val = row.get('atr_14', live_price * 0.03)
-            entry_levels = e1_sizer.compute_entry_levels(live_price, atr_14_val, dominant_cluster)
+            entry_levels = e1_sizer.compute_entry_levels(live_price, atr_14_val, dominant_cluster, regime=current_regime)
             
             initial_stop = entry_levels['initial_stop']
             breakeven_trigger = entry_levels['breakeven_trigger']

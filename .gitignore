@@ -5,3 +5,13 @@ scratch/
 .env.*
 *.pyc
 __pycache__/
+*.duckdb
+*.log
+E1/testing/check_*.py
+E1/testing/count_episodes.py
+E1/testing/db_audit.py
+E1/testing/deep_forensic.py
+E1/testing/forensic_trace.py
+E1/testing/stop_breach_autopsy.py
+E1/ops/audit_execution_timing.py
+E1/ops/db_activity_scan.py

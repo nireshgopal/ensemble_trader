@@ -1,9 +1,9 @@
 # Strategy E1: Unified Specification
 **Single Source of Truth (SSOT)**
 
-**Date**: May 1, 2026
+**Date**: May 8, 2026
 **Status**: **PRODUCTION / LIVE**
-**Version**: V1.4 (Phase 2 Hybrid)
+**Version**: V1.4 (Phase 2 Hardened - 12Y Audit Validated)
 
 ## 1. Strategy Identity & DNA
 
@@ -17,7 +17,10 @@ Strategy E1 is a **Quality-First Ensemble** (primarily PEAD-driven in Phase 1) d
 ### Core Governance Rules
 - **The 0.65 Gate**: No trade is entered unless the ensemble score hits **0.65** (Healthy) or **0.60** (Bear).
 - **The 20-Day Horizon**: The strategy exits primarily on time (**20 trading days**). *Note: Trading day counts are authoritative and MUST use `refined.price_history` as the strategy's trading calendar to eliminate calendar-day drift and holiday-lag artifacts.*
-- **Circuit Breaker**: Every position is protected by a **6.0x ATR** hard stop-loss.
+- **Circuit Breaker**: (V1.4) Every position is protected by a **Regime-Gated ATR** hard stop-loss.
+    - **HEALTHY**: 6.0x ATR
+    - **FRAGILE**: 7.0x ATR
+    - **BEAR**: 8.0x ATR
 - **Breakeven Progression**: (ACTIVE) Stop advances to entry (+0.01) once price touches **+1.5x ATR** above entry.
 - **Decay Veto**: (ACTIVE) Positions are exited early if the live ensemble score collapses by **40%** from the entry score. (Evidence: Test E showed that 50% decay conflicts with breakeven progression — the two controls interact and must be calibrated together).
 - **Almanac Entry Veto**: (ACTIVE) No new entries allowed within **5 days** of a scheduled earnings announcement.
@@ -39,7 +42,7 @@ Weights are derived from the latest Spearman Rank Correlation (IC) between signa
 | **RSI Bounce (S5)** | 0.0% | 35.0% | 35.0% | Panic Buyer |
 | **DD Recovery (S6)** | 0.0% | 27.0% | 27.0% | Mean Reversion |
 
-**Note**: In Healthy regimes, the strategy is 100% Quality/Momentum. In stress regimes, it pivots 100% to Quality/Mean-Reversion.
+**Authoritative Source**: The table above represents the **Baseline Policy**. The live trading engine utilizes **`docs/signal_weights.json`** as its authoritative weight source, which is updated daily by the End-of-Day (4:05 PM) reconciliation job.
 
 ---
 
@@ -65,8 +68,14 @@ The standard position size is further multiplied by a scalar derived from VIX an
 
 ### 3.3 Known Sizing Properties & Artifacts
 - **Compounded Risk Logic**: The final risk unit is mathematically `Base Risk * Conviction Scalar * S10 Macro Scalar`. In stressed regimes (e.g., S10 = 0.50), the effective risk drops below half the baseline. *OOS verification for 2022-2026 must ensure enough stressed-regime sessions were modeled to validate this contraction.*
-- **Volatility Exclusion Bias (The ATR Veto)**: Because the strategy enforces a 6.0x ATR stop-loss on a fixed 1.5% risk unit, any stock with an `ATR% > 5.0%` will structurally fail the 5% Dynamic Equity Floor. This means E1 V1.3 is intentionally biased against high-volatility names (e.g., high-beta tech or bios).
 - **Share Flooring Artifact**: The final position size is computed via `math.floor(raw_shares)`. For high-priced, low-ATR stocks, this rounding can result in a final deployed dollar value that is slightly *below* the 5% equity floor, even though the unrounded value passed the gate. This is a mathematically sound artifact of whole-share routing.
+
+### 3.4 Regime-Gated Stop Expansion (V1.4 Implementation)
+Following the 2022 forensic audit, the strategy was hardened against "Bear Market Volatility Shakeouts." 
+- **Rationale**: 2022 forensic rerun provided validated evidence of improvement in the bear stress test while preserving trade count. No FRAGILE-specific bug was found in the January 2022 COTY case (the trade remained in a HEALTHY-born state until the regime shifted).
+- **Mechanism**: The ATR multiplier expands from 6.0x to 8.0x in BEAR regimes only, with FRAGILE explicitly defined at 7.0x as an intermediate buffer.
+- **Risk Invariant**: Because the sizer denominator increases while the `risk_pct` (BEAR: 0.75%) stays capped, the resulting position size is significantly smaller (~37.5% of HEALTHY baseline). This allows for volatility survival without increasing total dollar exposure.
+- **Residual Tail Risk**: Overnight gap-downs (e.g., EXC -29%) remain structurally unblockable. These events are documented as the known extreme tail risk of the strategy.
 
 ---
 
@@ -102,13 +111,18 @@ All budget adjustments must be logged to `sandbox.e1_sector_caps_history` daily.
 ---
 
 ## 5. Exit Hierarchy (Order of Priority)
-1.  **Circuit Breaker**: Exit immediately if Price hits **6.0x ATR** below entry.
-2.  **Target T2**: 4.0x ATR above entry (Consolidated Automated Profit Taker).
-3.  **Time Exit**: Mandatory 3:00 PM exit on the 20th trading day.
+1.  **Circuit Breaker**: Exit immediately if Price hits **Regime-Gated ATR** (6x/7x/8x) below entry.
+2.  **Target T2**: 4.0x ATR above entry.
+3.  **Time Exit**: Mandatory exit on the 20th trading day.
 4.  **Decay Veto**: Exit if Score falls **>40%** from Entry Score AND Day Held > 5.
 5.  **Almanac Entry Veto**: Avoid entry if Earnings < 5 days away.
 6.  **Almanac Exit Veto**: Mandatory exit if Earnings < 2 days away AND held $\ge$ 5 days.
-7.  **Gap-Up Veto**: Avoid entry if price has gapped up > 4.0% (preventing staleness).
+7.  **Gap-Up Veto**: Avoid entry if price has gapped up > 4.0%.
+
+---
+
+## 5.1 System Health & Reconciliation
+*   **Broker Reconciliation (Sync)**: If the trader detects an "OPEN" position in the database that is missing from the Alpaca account (e.g., after a script restart where a broker-side bracket order was filled), it will forcefully reconcile the database state. Trigger: `ALPACA_SYNC_DESYNC`. This is a **maintenance artifact**, not a strategic exit, and is excluded from all alpha attribution and CTE training.
 
 **Note**: `e1_sizer.compute_entry_levels()` returns `t1_target` as a V1.3 artifact. This value is intentionally ignored by the trader. It is retained to avoid breaking the sizer's return contract.
 
@@ -137,7 +151,7 @@ The Alpha Audit Engine (`e1_monitor.py`) computes these metrics every EOD to ens
 
 | Metric | Target | Warning Threshold | Action |
 | :--- | :--- | :--- | :--- |
-| **T2 Hit Rate** | $\ge$ 15% | < 10% (2 consecutive) | Threshold Weight & Trigger Audit |
+| **T2 Hit Rate** | **$\ge$ 21%** | < 15% (2 consecutive) | Threshold Weight & Trigger Audit |
 | **BE Stop Ratio** | $\ge$ 75% | < 50% | T1/T2 Distance Review |
 | **Time Exit PnL (HEALTHY)** | $\ge$ -$20/trade | < -$50/trade (2 consecutive) | Shorten Time-Exit to 12 days |
 | **Time Exit PnL (BEAR)** | $\ge$ -$80/trade | < -$110/trade | Acceptable (2022 Baseline) |
@@ -254,6 +268,25 @@ The Strategy E1 V1.4 payoff profile is characterized by **Exit Category Asymmetr
 
 ### 13.1 Breakeven Progression Efficiency
 The high win rate of the "Stop Breach" category (81.8% in 2020 validation) confirms the efficiency of the **Breakeven Progression** logic. Most stopped-out trades are exited at `Entry + 0.01`, successfully eliminating capital loss on positions that reach the +1.5x ATR trigger but fail to achieve Target 2.
+
+---
+## 14. Statistical Ground Truths (2014-2026 Audit)
+
+Following the 12-year multi-regime performance audit, the following structural properties are formally recognized as the "DNA" of the E1 system:
+
+### 14.1 Regime Neutrality (HEALTHY vs. FRAGILE)
+*   **Empirical Mean (HEALTHY)**: +1.30% (Standard Error: 0.19%)
+*   **Empirical Mean (FRAGILE)**: +1.39% (Standard Error: 0.30%)
+*   **Finding**: The performance difference is statistically insignificant. Both regimes are functionally identical for sizing and risk purposes. **No "Fragile Premium" is supported by the data.**
+
+### 14.2 Score Decay Fidelity
+*   **Recovery Expectancy**: **0.0%**.
+*   **Finding**: When the ensemble score drops below 60%, the idiosyncratic quality of the stock has collapsed. There is zero statistical evidence of 20-day recovery post-exit. The Score Decay exit is a high-fidelity loss-prevention tool, not a premature exit.
+
+### 14.3 Velocity Gap (Time Exits)
+*   **HEALTHY Time Exits**: Avg +0.50% (Momentum is "Grinding").
+*   **FRAGILE Time Exits**: Avg +0.09% (**Dead Water**).
+*   **Insight**: In Fragile regimes, mean-reversion signals that fail to hit T2 within 20 days are structurally neutralized by market noise.
 
 ---
 **End of Specification V1.4**
