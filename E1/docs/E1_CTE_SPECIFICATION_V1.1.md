@@ -32,6 +32,7 @@ It is a **shrunk conditional mean lookup** that:
 - Uses **macro/regime context features** to define cells.  
 - Computes **shrunk average PnL per cell** via empirical‑Bayes style shrinkage to avoid over‑believing small samples.  
 - Maps that shrunk mean to a **bounded multiplier** in \([0.90, 1.10]\).  
+- Focuses on **dynamic market state** (VIX Momentum, Regime Age) rather than static levels, ensuring the logic is strictly incremental to S10.
 - Applies only after the existing conviction scalar and before S10, with a **hard combined scalar cap**.
 
 CTE V1.1 explicitly acknowledges:
@@ -116,35 +117,36 @@ The following are permanently excluded from CTE training:
 
 ### 4.1 Base Features
 
-CTE V1.1 starts from the original conceptual feature space:
+CTE V1.1 focuses on the **trajectory and duration** of the market state:
 
 1. **Entry Regime**  
    - Values: `HEALTHY`, `FRAGILE`, `BEAR`  
 
-2. **VIX Bucket at Entry**  
-   - `LOW`:       VIX < 15  
-   - `NORMAL`:    15 ≤ VIX < 25  
-   - `ELEVATED`:  25 ≤ VIX < 40  
-   - `PANIC`:     VIX ≥ 40  
+2. **VIX Momentum Bucket at Entry**  
+   Measures the 20-day velocity of volatility to distinguish "Volatility Crushes" from "Spiking Panic."
+   - Formula: \(\Delta V = \frac{VIX_\text{now} - VIX_\text{20d\_ago}}{VIX_\text{20d\_ago}}\)
+   - Bins:
+     - `VIX_COLLAPSING`: \(\Delta V < -0.20\)
+     - `VIX_FALLING`: \(-0.20 \le \Delta V < -0.05\)
+     - `VIX_STABLE`: \(-0.05 \le \Delta V < +0.05\)
+     - `VIX_RISING`: \(+0.05 \le \Delta V < +0.20\)
+     - `VIX_SPIKING`: \(\Delta V \ge +0.20\)
 
-3. **Third Feature (F3)**  
-   Initially:
-
-   - `dominant_cluster ∈ {Quality, Trend, MeanReversion}`  
-
-   but subject to empirical validation via IC pre‑filter (below). Future candidates (e.g., rolling 20‑day time‑exit PnL bucket, regime drift direction) must pass the same filter.
+3. **Regime Age Bucket at Entry (F3 Candidate)**  
+   Measures the duration of the current regime to distinguish "Fresh Recovery" from "Late-Cycle Fatigue."
+   - Formula: Days since the last regime transition.
+   - Bins:
+     - `REGIME_FRESH`: \(age < 15\) days
+     - `REGIME_ESTABLISHED`: \(15 \le age \le 90\) days
+     - `REGIME_MATURE`: \(age > 90\) days
 
 ### 4.2 Information Coefficient (IC) Filter
 
 Before building any lookup table, we test whether a feature actually explains realized PnL:
 
-1. Compute **Spearman rank correlation (IC)** between each candidate feature and realized per‑trade PnL (or 20‑day forward PnL where appropriate), stratified by regime.  
-2. If a feature’s IC magnitude is below a small threshold (e.g., \|IC\| < 0.03) and statistically indistinguishable from 0, that feature is **dropped** from the CTE feature space.
-
-Implications:
-
-- If `dominant_cluster` is effectively constant in HEALTHY (e.g., >90% of trades labeled “Quality”), it will fail IC and be dropped as F3 for that regime.  
-- Replacement F3 candidates are allowed, but they must satisfy the same IC standard before inclusion.
+1. Compute **Spearman rank correlation (IC)** between each candidate feature and realized per-trade PnL, stratified by regime.  
+2. If a feature’s IC magnitude is below a small threshold (e.g., \|IC\| < 0.03), that feature is **dropped**.
+3. `regime_age_bucket` is the primary F3 candidate. `dominant_cluster` is the fallback if `regime_age` fails IC or shows insufficient coverage.
 
 ---
 
@@ -155,13 +157,13 @@ Implications:
 A CTE cell is defined by:
 
 ```text
-(entry_regime, vix_bucket, F3)
+(entry_regime, vix_momentum_bucket, F3)
 ```
 
-where `F3` is present only if it survives the IC filter.
+where `F3` is `regime_age_bucket` (primary) or `dominant_cluster` (secondary).
 
-Maximum theoretical cells: 3 (regimes) × 4 (VIX buckets) × 3 (clusters) = 36  
-In practice, many are empty or absent due to IC filtering.
+Maximum theoretical cells: 3 regimes × 5 VIX momentum buckets × 3 F3 buckets = **45 cells**.
+In practice, many are empty (e.g., BEAR + VIX_COLLAPSING is rare) or absent due to IC filtering.
 
 ### 5.2 Raw Cell Metrics
 
@@ -292,20 +294,20 @@ The CTE lookup table is stored in `sandbox.e1_cte_lookup` and must be rebuilt wh
 
 ```sql
 CREATE TABLE IF NOT EXISTS sandbox.e1_cte_lookup (
-    entry_regime      VARCHAR,       -- HEALTHY / FRAGILE / BEAR
-    vix_bucket        VARCHAR,       -- LOW / NORMAL / ELEVATED / PANIC
-    f3_feature        VARCHAR,       -- dominant_cluster or other (if IC passed)
-    trade_count       INTEGER,       -- Raw n
-    episode_count     INTEGER,       -- Independent regime episodes
-    raw_avg_pnl       FLOAT,         -- Unshrunk mean
-    shrunk_avg_pnl    FLOAT,         -- Bayesian shrunk mean (primary signal)
-    global_avg_pnl    FLOAT,         -- The prior used for shrinkage
-    pnl_stddev        FLOAT,         -- Confidence interval driver
-    t2_hit_rate       FLOAT,         -- Secondary guard metric
-    data_quality      VARCHAR,       -- WEAK / MODERATE
-    cte_multiplier    FLOAT,         -- Final [0.90, 1.10] scalar
-    last_updated      TIMESTAMP,     -- Rebuild audit trail
-    PRIMARY KEY (entry_regime, vix_bucket, f3_feature)
+    entry_regime          VARCHAR,       -- HEALTHY / FRAGILE / BEAR
+    vix_momentum_bucket   VARCHAR,       -- COLLAPSING to SPIKING
+    regime_age_bucket     VARCHAR,       -- FRESH to MATURE
+    trade_count           INTEGER,       -- Raw n
+    episode_count         INTEGER,       -- Independent regime episodes
+    raw_avg_pnl           FLOAT,         -- Unshrunk mean
+    shrunk_avg_pnl        FLOAT,         -- Bayesian shrunk mean (primary signal)
+    global_avg_pnl        FLOAT,         -- The prior used for shrinkage
+    pnl_stddev            FLOAT,         -- Confidence interval driver
+    t2_hit_rate           FLOAT,         -- Secondary guard metric
+    data_quality          VARCHAR,       -- WEAK / MODERATE
+    cte_multiplier        FLOAT,         -- Final [0.90, 1.10] scalar
+    last_updated          TIMESTAMP,     -- Rebuild audit trail
+    PRIMARY KEY (entry_regime, vix_momentum_bucket, regime_age_bucket)
 );
 ```
 
@@ -372,14 +374,15 @@ These fields enable future attribution and drift monitoring.
 
 ### 10.1 Phase 0 — Offline Training
 
-- Build initial CTE lookup table from simulation (`ANNUAL_AUDIT_%` runs) using the procedure above.  
+- Build initial CTE lookup table from simulation (`ANNUAL_AUDIT_%` runs).
+- **Engineering Note**: Training SQL must utilize `LAG(vix_close, 20) OVER (ORDER BY date)` to compute VIX momentum and a cumulative count resetting on regime changes to compute regime age.
 - No impact on live or paper sizing; this is an offline calibration step.
 
 ### 10.2 Phase 1 — Logging‑Only Paper Mode
 
 For at least **60 paper trading sessions**:
 
-- Compute all CTE values per entry (bucket, shrunk mean, multiplier), log to DB.  
+- Compute all CTE values per entry (vix_momentum, regime_age, multiplier), log to DB.  
 - **Do not** apply `cte_multiplier` to actual sizing — force `cte_multiplier = 1.00` in risk calculation.  
 - Target: accumulate ~100–200 paper trades.
 
