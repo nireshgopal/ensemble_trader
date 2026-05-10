@@ -95,9 +95,9 @@ Key fields:
 
 The 12‑year audit confirms approximate coverage:
 
-- HEALTHY: 1,347 trades across 79 independent episodes  
-- FRAGILE: 346 trades across 80 independent episodes  
-- BEAR: 114 trades across 32 independent episodes  
+- HEALTHY: 1,254 trades across 79 independent episodes  
+- FRAGILE: 343 trades across 80 independent episodes  
+- BEAR: 5 trades across 32 independent episodes (Note: Sparse due to V1.4 S10 Bear Veto)
 
 ### 3.2 Exclusions
 
@@ -123,17 +123,12 @@ CTE V1.1 focuses on the **trajectory and duration** of the market state:
    - Values: `HEALTHY`, `FRAGILE`, `BEAR`  
 
 2. **VIX Momentum Bucket at Entry**  
-   Measures the 20-day velocity of volatility to distinguish "Volatility Crushes" from "Spiking Panic."
+   Measures the 20-day velocity of volatility. Bins are defined by **quintiles** (20th, 40th, 60th, 80th percentiles) of the training set to ensure balanced cell population.
    - Formula: \(\Delta V = \frac{VIX_\text{now} - VIX_\text{20d\_ago}}{VIX_\text{20d\_ago}}\)
-   - Bins:
-     - `VIX_COLLAPSING`: \(\Delta V < -0.20\)
-     - `VIX_FALLING`: \(-0.20 \le \Delta V < -0.05\)
-     - `VIX_STABLE`: \(-0.05 \le \Delta V < +0.05\)
-     - `VIX_RISING`: \(+0.05 \le \Delta V < +0.20\)
-     - `VIX_SPIKING`: \(\Delta V \ge +0.20\)
+   - Labels: `VIX_COLLAPSING`, `VIX_FALLING`, `VIX_STABLE`, `VIX_RISING`, `VIX_SPIKING`.
 
 3. **Regime Age Bucket at Entry (F3 Candidate)**  
-   Measures the duration of the current regime to distinguish "Fresh Recovery" from "Late-Cycle Fatigue."
+   Measures the duration of the current regime.
    - Formula: Days since the last regime transition.
    - Bins:
      - `REGIME_FRESH`: \(age < 15\) days
@@ -207,16 +202,17 @@ For each cell, define:
 - \( \hat{\mu}_\text{cell} = \) `avg_pnl_dollars`  
 - \( \mu_\text{global} = \) `global_avg_pnl_dollars`  
 
-Choose a shrinkage parameter \(k > 0\) controlling how fast we “trust” the cell (e.g., \(k \in [50, 100]\)).
+Choose a data-driven shrinkage parameter \(k^*\) to minimize the mean squared error of the estimate.
+- **Rule**: \(k^* \approx \frac{\sigma^2_\text{within}}{\sigma^2_\text{between}}\)
+  - \(\sigma^2_\text{within}\): The average of the per-cell PnL variances.
+  - \(\sigma^2_\text{between}\): The variance of the cell raw means around the global mean.
 
 Shrinkage weight:
-
 \[
-w = \frac{n}{n + k}
+w = \frac{n}{n + k^*}
 \]
 
 Shrunk mean:
-
 \[
 \mu_\text{shrunk} = w \, \hat{\mu}_\text{cell} + (1 - w) \, \mu_\text{global}
 \]
@@ -233,8 +229,8 @@ Optional: the same structure can be applied to T2 rate or other probabilities if
 Each cell receives a coarse quality flag:
 
 - `data_quality = 'WEAK'` if:
-  - `trade_count < n_min` (e.g., 10) **or**  
-  - `episode_count < 3`.  
+  - `trade_count < 10` **or**  
+  - `episode_count < 5`.  
 
 - `data_quality = 'MODERATE'` otherwise.
 
@@ -265,11 +261,10 @@ CTE multiplier:
 if data_quality == 'WEAK':
     cte_multiplier = 1.00
 else:
-    if r >= 1.30:              cte_multiplier = 1.10
-    elif 1.10 <= r < 1.30:      cte_multiplier = 1.05
-    elif 0.90 <= r < 1.10:      cte_multiplier = 1.00
-    elif 0.70 <= r < 0.90:      cte_multiplier = 0.95
-    else:                       cte_multiplier = 0.90
+    # Continuous Linear Mapping
+    # Multiplier scales 10% for every 1.0 unit of ratio deviance
+    raw_mult = 1.0 + 0.10 * (r - 1.0)
+    cte_multiplier = clip(raw_mult, 0.90, 1.10)
 ```
 
 Constraints:
@@ -402,7 +397,7 @@ If Phase 1 shows no obvious inversion:
 
 - Enable `cte_multiplier` **only for cells that**:
   - Have `data_quality != 'WEAK'` in training, and  
-  - Have at least N_live trades in paper (e.g., 20+) with consistent sign (mean PnL not contradicting the shrunk direction).
+  - **Standard Error Rule**: The live paper mean PnL must not be more than 1.0 Standard Error below the shrunk training mean.
 
 Other cells remain at `cte_multiplier = 1.00` until they accumulate more evidence.
 
@@ -410,7 +405,7 @@ Other cells remain at `cte_multiplier = 1.00` until they accumulate more evidenc
 
 CTE is continuously monitored:
 
-- If a bucket’s **live avg PnL** deteriorates materially vs `cte_shrunk_avg_pnl`, its multiplier should be shrunk toward 1.00 or frozen at 1.00 until re‑trained.  
+- If the shrunk `stop_rate > 15%` (roughly 5x the global ~3% baseline), cap `cte_multiplier` at ≤ 1.00 regardless of `r`.  
 - If high‑CTE buckets consistently underperform low‑CTE buckets, CTE should be globally de‑activated (all multipliers set to 1.00) and revisited.
 
 CTE never becomes “set and forget”; it is a live hypothesis that must earn its risk budget.
