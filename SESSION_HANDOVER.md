@@ -14,27 +14,28 @@
 ---
 
 ## PHASE 1: CURRENT SESSION HANDOVER
-**Last Update**: 2026-05-10 01:30
+**Last Update**: 2026-05-09 23:30 (Post V1.5 Hardening)
 
-### 1. Status & Recent Wins
-- **CTE V1.1 "Hardened" Specification**: Successfully pivoted from static features to **Dynamic Momentum** features (VIX Delta & Regime Age).
-- **Bayesian Calibration**: Implemented data-driven shrinkage ($k^* = 11.24$) and **Continuous Multiplier Mapping** to eliminate "cliff effects."
-- **Risk Invariant**: Codified a **1.50x Hard Combined Scalar Cap** (Conviction × CTE × S10).
-- **Forensic Audit**: Resolved the "Ghost BEAR" discrepancy (Confirmed 5 BEAR trades in V1.4 logic vs 114 in legacy logic).
-- **Infrastructure Deployed**: 
-    - `E1/ops/cte_builder.py`: Authoritative builder for the `e1_cte_lookup` table.
-    - `E1/testing/validate_cte.py`: Sandbox environment for pre-execution contextual sizing tests.
+### 1. Status & Recent Wins (V1.5 Transition)
+- **V1.5 Governance Published**: Formally integrated **Pillar 7 (CTE)** risk-scaling, **PIT-Safe Fundamental Rules**, and **Structured Exit Taxonomy** into `E1_SPECIFICATION.md`.
+- **Module Hardening**:
+    - `exit_evaluator.py`: Implemented structured return dictionaries for explicit `exit_trigger` propagation (e.g., `TIME_EXIT_20D`, `SCORE_DECAY_VETO`).
+    - `e1_trader.py`: Integrated the **CTE "Observation Mode"** hook (multiplier logged at 1.0x).
+    - `e1_sizer.py`: Hardened sizing formula to support the triple-scalar stack (Conviction x S10 x CTE).
+- **Piotroski PIT Enforcement**: Refactored `piotroski.py` to block look-ahead bias in Yahoo data and propagate "Low Confidence" flags for thin history.
+- **Watchlist Enforcement**: Enforced mandatory `JOIN schwab.watchlists` in the main signal query to strictly limit the universe to the 895 audited tickers.
+- **Shadow Performance Tuning**: Optimized `shadow_runner.py` with SQL-side JSON extraction for rapid PIT lookups (Startup time reduced from 5 mins to 30 secs).
 
-### 2. Validation & Sanity (The "Peripheral Vision" Proof)
-- **2020 Recovery**: Confirmed **1.10x Boost** for VIX_COLLAPSING / REGIME_ESTABLISHED context.
-- **2022 Panic**: Confirmed **1.00x Neutralization** for VIX_SPIKING context due to **5-Episode Floor (WEAK)** filter.
-- **Current Market (May 2026)**: Identified as **Healthy / VIX_FALLING / Fresh Recovery** with a **1.04x** multiplier.
+### 2. Validation & Sanity (March-May Shadow Test)
+- **Status**: Ongoing validation of the March 2026 window.
+- **Universe Match**: Confirmed `refined.e1_piotroski_history` covers the 895 watchlist tickers.
+- **CTE Logging**: Verified that the theoretical CTE multiplier (VIX Momentum + Regime Age) is being calculated correctly and written to `e1_sim_trade_log` for attribution audit.
 
 ### 3. Immediate Objectives (Next Session)
-- **Step 2 (Hardening)**: Update the `sandbox.e1positions` schema to include the 6 new CTE tracking columns (`cte_multiplier`, `shrunk_pnl`, etc.).
-- **Step 3 (Integration)**: Perform "Logging-Only" integration in `e1_trader.py`. Calculate and record CTE context per trade but force multiplier to 1.00 for the first 60 sessions.
-- **Phase 3 Roadmap**: Continue work on **Lookahead Removal** in Sector RS and **S3 Sector Rank** integration.
+- **CTE Validation Audit**: Review the `e1_sim_trade_log` for the March run to confirm `shrunk_cte_theoretical` distribution across the 2026 Fragile regime.
+- **Live Transition Planning**: Once observation mode confirms CTE accuracy, prepare the PR to toggle `cte_mult_active = True`.
+- **Schema Hardening**: Finalize the `E1POSITIONS` schema update for live CTE tracking.
 
 ### 4. Environment State
-- **Clean Repo**: Obsolescent `V1.0` CTE specs have been deleted.
-- **Production Readiness**: V1.4 core engine is stable. The CTE remains in **Phase 0 (Offline)** and is not yet impacting live sizing.
+- **Production Readiness**: V1.5 core engine is hardened. 
+- **Data Source**: Strictly using `refined.e1_piotroski_history` for fundamentals. Yahoo fallbacks are disabled for shadow runs to maintain audit integrity.

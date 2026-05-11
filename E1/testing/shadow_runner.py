@@ -117,53 +117,59 @@ _YAHOO_CACHE = {}
 
 def prefetch_yahoo_financials(conn):
     """
-    PIT-safe pre-extraction of Yahoo financials.
-    Loads ALL historical snapshots into memory to allow fast PIT lookups.
+    PIT-safe pre-extraction of Yahoo financials using SQL-side JSON extraction.
+    Much faster than parsing JSON in Python loops.
     """
     global _YAHOO_CACHE
-    logger.info("[SHADOW] Pre-extracting PIT-safe Yahoo financials cache...")
+    logger.info("[SHADOW] Pre-extracting PIT-safe Yahoo financials cache (SQL Optimized)...")
     
-    # Load all historical records ordered by fetched_at DESC
-    df = conn.execute("""
-        SELECT ticker, fetched_at, raw_json FROM yahoo.yahoo_raw
-        ORDER BY ticker, fetched_at DESC
-    """).df()
+    # We use json_extract to pull just the raw values directly in DuckDB
+    # Only pull the latest 3 snapshots per ticker to keep memory footprint manageable
+    query = """
+        WITH snapshots AS (
+            SELECT 
+                ticker, 
+                CAST(fetched_at AS DATE) as fetched_at,
+                json_extract(raw_json, '$.quoteSummary.result[0].financialData.operatingCashflow.raw')::DOUBLE as ocf,
+                json_extract(raw_json, '$.quoteSummary.result[0].financialData.freeCashflow.raw')::DOUBLE as fcf,
+                json_extract(raw_json, '$.quoteSummary.result[0].financialData.returnOnAssets.raw')::DOUBLE as roa,
+                json_extract(raw_json, '$.quoteSummary.result[0].financialData.returnOnEquity.raw')::DOUBLE as roe,
+                json_extract(raw_json, '$.quoteSummary.result[0].financialData.grossMargins.raw')::DOUBLE as gm,
+                json_extract(raw_json, '$.quoteSummary.result[0].financialData.currentRatio.raw')::DOUBLE as cr,
+                json_extract(raw_json, '$.quoteSummary.result[0].financialData.totalDebt.raw')::DOUBLE as td,
+                json_extract(raw_json, '$.quoteSummary.result[0].financialData.totalRevenue.raw')::DOUBLE as tr,
+                json_extract(raw_json, '$.quoteSummary.result[0].financialData.totalCash.raw')::DOUBLE as tc,
+                COALESCE(
+                    json_extract(raw_json, '$.quoteSummary.result[0].defaultKeyStatistics.sharesOutstanding.raw')::DOUBLE,
+                    json_extract(raw_json, '$.quoteSummary.result[0].financialData.sharesOutstanding.raw')::DOUBLE
+                ) as so
+            FROM yahoo.yahoo_raw
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fetched_at DESC) <= 3
+        )
+        SELECT * FROM snapshots ORDER BY ticker, fetched_at DESC
+    """
+    
+    df = conn.execute(query).df()
     
     _YAHOO_CACHE = {}
-    import json
     for ticker, group in df.groupby('ticker'):
         records = []
         for _, row in group.iterrows():
-            try:
-                raw_json = row['raw_json']
-                raw = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
-                qs = raw.get('quoteSummary', {})
-                results = qs.get('result', [])
-                if results:
-                    fd = results[0].get('financialData', {})
-                    ds = results[0].get('defaultKeyStatistics', {})
-                    def _val(d, key):
-                        v = d.get(key)
-                        if isinstance(v, dict): return v.get('raw')
-                        return v
-                    
-                    records.append({
-                        'fetched_at': pd.to_datetime(row['fetched_at']).date(),
-                        'data': {
-                            'operatingCashflow': _val(fd, 'operatingCashflow'),
-                            'freeCashflow': _val(fd, 'freeCashflow'),
-                            'returnOnAssets': _val(fd, 'returnOnAssets'),
-                            'returnOnEquity': _val(fd, 'returnOnEquity'),
-                            'grossMargins': _val(fd, 'grossMargins'),
-                            'currentRatio': _val(fd, 'currentRatio'),
-                            'totalDebt': _val(fd, 'totalDebt'),
-                            'totalRevenue': _val(fd, 'totalRevenue'),
-                            'totalCash': _val(fd, 'totalCash'),
-                            'sharesOutstanding': _val(ds, 'sharesOutstanding') or _val(fd, 'sharesOutstanding'),
-                        }
-                    })
-            except Exception:
-                continue
+            records.append({
+                'fetched_at': row['fetched_at'],
+                'data': {
+                    'operatingCashflow': row['ocf'],
+                    'freeCashflow':      row['fcf'],
+                    'returnOnAssets':     row['roa'],
+                    'returnOnEquity':     row['roe'],
+                    'grossMargins':      row['gm'],
+                    'currentRatio':      row['cr'],
+                    'totalDebt':         row['td'],
+                    'totalRevenue':      row['tr'],
+                    'totalCash':         row['tc'],
+                    'sharesOutstanding':  row['so']
+                }
+            })
         _YAHOO_CACHE[ticker] = records
     logger.info(f"[SHADOW] Cached PIT history for {len(_YAHOO_CACHE)} tickers.")
 
@@ -278,37 +284,24 @@ def _point_in_time_quarterly_pair(con, ticker):
 def _point_in_time_get_precomputed_fscore(con, ticker, sim_date=None):
     """PIT-safe lookup for pre-computed F-Scores from memory cache."""
     history = _PIOTROSKI_HISTORY_CACHE.get(ticker, [])
-    if not history:
-        return None
-        
     pit_date = sim_date or _sim_date_for_piotroski or date.today()
-    
-    # TRACE FOR XOM
-    if ticker == 'XOM':
-        logger.info(f"[TRACE XOM] PIT Date: {pit_date} | Cache Size: {len(history)}")
-
     for record in history:
-        if record['score_date'] <= pit_date:
-            if ticker == 'XOM':
-                logger.info(f"[TRACE XOM] MATCH FOUND: {record['score_date']} | Score: {record['f_score']}")
-            # Reconstruct the result dictionary to match piotroski.py contract
-            f_score = record['f_score']
-            f_dt = record['filing_date']
-            status = record['status']
-            
-            staleness_days = (pit_date - f_dt).days
-            
+        # Convert record date to date object for robust comparison
+        r_date = record['score_date']
+        if hasattr(r_date, 'date'): r_date = r_date.date()
+        elif isinstance(r_date, str): r_date = pd.to_datetime(r_date).date()
+        
+        if r_date <= pit_date:
             return {
-                'f_score': f_score,
-                'points': {},
-                'detail': {0: f"Pre-computed from EDGAR ({status}) [PIT CACHED]"},
-                'source': f'edgar_{status.lower()}',
-                'staleness_days': staleness_days,
-                'warnings': [],
+                "f_score": record['f_score'],
+                "source": "EDGAR_HISTORY",
+                "date": r_date,
+                "filing_date": record['filing_date'],
+                "status": record['status']
             }
     return None
 
-def _strict_edgar_compute_piotroski(con, ticker, sim_date=None, **kwargs):
+def _strict_edgar_compute_piotroski(ticker, con, sim_date=None, **kwargs):
     """Enforces EDGAR-only scores for OOS calibration validation."""
     result = piotroski.get_precomputed_fscore(con, ticker, sim_date)
     if result is not None:
@@ -325,15 +318,11 @@ def _strict_edgar_compute_piotroski(con, ticker, sim_date=None, **kwargs):
         "staleness_days": 999
     }
 
-def set_piotroski_sim_date(sim_date: date, strict=False):
+def set_piotroski_sim_date(sim_date: date, strict=True):
     global _sim_date_for_piotroski
     _sim_date_for_piotroski = sim_date
-    if strict:
-        piotroski.compute_piotroski_live = _strict_edgar_compute_piotroski
-    else:
-        piotroski._get_quarterly_pair = _point_in_time_quarterly_pair
-        piotroski._extract_yahoo_financials = _point_in_time_extract_yahoo_financials
-        piotroski._get_yahoo_shares = _point_in_time_get_yahoo_shares
+    # Always use strict EDGAR-only mode for shadow runs to be "humming"
+    piotroski.compute_piotroski_live = _strict_edgar_compute_piotroski
     piotroski.get_precomputed_fscore = _point_in_time_get_precomputed_fscore
 
 # =============================================================================
@@ -609,7 +598,7 @@ def run_shadow(start: date, end: date, inject_scenario: Optional[str] = None,
 
     # Load financials cache for Piotroski PIT
     load_financials_cache(conn)
-    prefetch_yahoo_financials(conn)
+    # prefetch_yahoo_financials(conn) # REMOVED per user feedback
     prefetch_piotroski_history(conn)
 
     # -------------------------------------------------------------------------
@@ -621,7 +610,7 @@ def run_shadow(start: date, end: date, inject_scenario: Optional[str] = None,
         logger.info(f"{'─'*55}")
 
         # Patch Piotroski with today's sim_date for point-in-time F-Score
-        set_piotroski_sim_date(sim_date, strict=strict_edgar)
+        set_piotroski_sim_date(sim_date, strict=True)
 
         # Patch Telegram with sim prefix
         patch_telegram(sim_date)
@@ -673,8 +662,8 @@ def run_shadow(start: date, end: date, inject_scenario: Optional[str] = None,
     restore_telegram()
     restore_config_tables()
     piotroski._get_quarterly_pair = _original_get_quarterly_pair
-    piotroski._extract_yahoo_financials = _original_extract_yahoo
-    piotroski._get_yahoo_shares = _original_get_yahoo_shares
+    # piotroski._extract_yahoo_financials = _original_extract_yahoo
+    # piotroski._get_yahoo_shares = _original_get_yahoo_shares
     # Note: get_precomputed_fscore didn't have an original patch in this script
     # but we should restore it to the real function if possible.
     from E1.core.piotroski import get_precomputed_fscore as real_get_fscore

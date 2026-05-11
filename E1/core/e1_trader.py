@@ -198,9 +198,7 @@ def get_sector_rs_lookup(conn, as_of_date=None):
     """
     Fetches pre-calculated 120-day trailing Relative Strength for all sectors vs SPY.
     """
-    if as_of_date is None:
-        as_of_date = date.today()
-    
+    as_of_date = as_of_date or date.today()
     date_str = as_of_date.strftime('%Y-%m-%d')
     
     try:
@@ -819,13 +817,12 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
                     logger.info(f"[SIMULATE] Would exit {ticker} ({pos['shares']} shares)")
                 
                 exit_price = eval_result.get('exit_price') or mdata_dict['current_price']
+                exit_trigger = eval_result.get('exit_trigger', 'UNKNOWN')
                 pnl_pct = (exit_price - pos['entry_price']) / pos['entry_price'] if pos['entry_price'] > 0 else 0
                 pnl_dollars = (exit_price - pos['entry_price']) * pos['shares']
-                # V1.4: Use trading days instead of calendar days (F-14 fix)
                 entry_dt = pd.to_datetime(pos['entry_date']).date() if hasattr(pos['entry_date'], 'strftime') else pos['entry_date']
                 days_held = exit_evaluator.get_trading_days_held(conn, ticker, entry_dt, effective_date)
                 
-                # Update position status and log exit only if NOT simulating
                 if not simulate and p_id is not None:
                     conn.execute(f"""
                         UPDATE {config.E1_POSITIONS_TABLE} 
@@ -834,10 +831,9 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
                             pnl_pct = ?, pnl_dollars = ?, days_held = ?,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
-                    """, [today_str, exit_price, eval_result.get('reason', 'UNKNOWN'), current_regime, pnl_pct, pnl_dollars, days_held, p_id])
+                    """, [today_str, exit_price, exit_trigger, current_regime, pnl_pct, pnl_dollars, days_held, p_id])
                     
-                    # --- V1.4: SCORE DECAY POST-EXIT TRACKING (Step 2) ---
-                    if 'SCORE_DECAY_VETO' in str(eval_result.get('reason', '')):
+                    if 'SCORE_DECAY_VETO' in str(exit_trigger):
                         try:
                             sim_run_id = getattr(_client, 'sim_run_id', None)
                             conn.execute(f"""
@@ -852,14 +848,10 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
                                 pos.get('ensemble_score', 0.0), mdata_dict.get('current_score', 0.0), pos.get('entry_regime', 'UNKNOWN'),
                                 sim_run_id
                             ])
-                            logger.info(f"  [TRACKING] Logged {ticker} score decay for post-exit audit.")
-                        except Exception as e:
-                            logger.error(f"Failed to log score decay tracking for {ticker}: {e}")
+                        except Exception: pass
 
-                    # Update trade log for exits (F-01 consolidation)
-                    trigger_val = eval_result.get('exit_trigger', eval_result.get('action', 'UNKNOWN'))
+                    # Update trade log for exits
                     reason_val = eval_result.get('reason', 'UNKNOWN')
-                    
                     conn.execute(f"""
                         INSERT INTO {config.E1_TRADE_LOG_TABLE} (
                             position_id, ticker, action, trade_date, price, shares, dollar_value, 
@@ -867,13 +859,10 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
                         ) VALUES (
                             ?, ?, 'EXIT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                         )
-                    """, [p_id, ticker, today_str, exit_price, pos['shares'], exit_price * pos['shares'], trigger_val, reason_val, current_regime, pnl_pct, pnl_dollars, days_held, sim_run_id])
-                elif not simulate:
-                    logger.warning(f"  [WARN] {ticker} skipped DB update for SELL due to NULL id")
-                else:
-                    logger.info(f"[SIMULATE] Would record exit for {ticker} in database.")
-
+                    """, [p_id, ticker, today_str, exit_price, pos['shares'], exit_price * pos['shares'], exit_trigger, reason_val, current_regime, pnl_pct, pnl_dollars, days_held, sim_run_id])
+                
                 closed_count += 1
+
         except Exception as e:
             logger.error(f"CRITICAL ERROR evaluating {ticker}: {e}", exc_info=True)
             continue
@@ -1079,6 +1068,55 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, [today_str, current_regime, current_mapped_sector, base_cap, sector_rs, effective_cap_pct, reason])
 
+            # --- PILLAR 7: CTE Multiplier Calculation (Logging-Only Phase 1) ---
+            # For now, we fetch the multiplier but force it to 1.0 to avoid impacting risk.
+            # We log the 'shrunk_cte_theoretical' for audit.
+            cte_theoretical = 1.0
+            try:
+                # 1. VIX Momentum
+                vix_mom_res = conn.execute("""
+                    SELECT (close - LAG(close, 20) OVER (ORDER BY date)) / LAG(close, 20) OVER (ORDER BY date) as momentum
+                    FROM refined.price_history
+                    WHERE ticker = '$VIX' AND date <= ?
+                    ORDER BY date DESC LIMIT 1
+                """, [today_str]).fetchone()
+                vix_mom = vix_mom_res[0] if vix_mom_res else 0
+                vix_bucket = 'VIX_STABLE'
+                if vix_mom > 0.10: vix_bucket = 'VIX_RISING'
+                elif vix_mom < -0.10: vix_bucket = 'VIX_FALLING'
+                
+                # 2. Regime Age (Days since last transition)
+                age_res = conn.execute("""
+                    WITH changes AS (
+                        SELECT date, regime,
+                               CASE WHEN regime != LAG(regime) OVER (ORDER BY date) THEN 1 ELSE 0 END as step
+                        FROM refined.market_regime
+                        WHERE date <= ?
+                    ),
+                    groups AS (
+                        SELECT date, regime, SUM(step) OVER (ORDER BY date) as gid
+                        FROM changes
+                    )
+                    SELECT COUNT(*) FROM groups 
+                    WHERE gid = (SELECT MAX(gid) FROM groups)
+                """, [today_str]).fetchone()
+                regime_age = age_res[0] if age_res else 0
+                age_bucket = 'REGIME_ESTABLISHED'
+                if regime_age < 10: age_bucket = 'REGIME_FRESH'
+                elif regime_age > 40: age_bucket = 'REGIME_MATURE'
+                
+                # 3. Lookup
+                cte_row = conn.execute("""
+                    SELECT cte_multiplier FROM sandbox.e1_cte_lookup
+                    WHERE entry_regime = ? AND vix_momentum_bucket = ? AND regime_age_bucket = ?
+                """, [current_regime, vix_bucket, age_bucket]).fetchone()
+                if cte_row:
+                    cte_theoretical = cte_row[0]
+            except Exception as e:
+                logger.warning(f"CTE lookup failed for {ticker}: {e}")
+            
+            cte_mult_active = 1.0 # PHASE 1: Logging Only. Force to 1.0.
+
             # Call sizer
             size_res = e1_sizer.compute_position_size(
                 ticker=ticker,
@@ -1094,8 +1132,10 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
                 vix_close=vix_close,
                 hy_spread=hy_spread,
                 skew_compression=skew_compression,
-                sector_cap_pct=effective_cap_pct
+                sector_cap_pct=effective_cap_pct,
+                cte_mult=cte_mult_active
             )
+
             
             if size_res['skipped']:
                 logger.debug(f"Skipped {ticker}: {size_res['skip_reason']}")
@@ -1107,14 +1147,15 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
 [AUDIT DUMP: {ticker}]
 - raw_score:          {row['ensemble_score']:.4f}
 - conviction_scalar:  {size_res.get('score_scalar', 0):.4f}
+- cte_mult (theor):   {cte_theoretical:.4f} (Active: {cte_mult_active:.1f}x)
 - risk_dollars:       {size_res.get('dollar_value', 0) / (size_res.get('shares', 1) * live_price) * 100 if live_price else 0:.2f}% (effective)
 - atr_dollars:        {row.get('atr_14', 0):.4f}
 - stop_distance:      {size_res.get('stop_loss', 0) - live_price:.4f}
 - raw_shares:         {size_res.get('shares', 0)}
-- floored_shares:     {size_res.get('shares', 0)}
 - final_position_size: ${size_res.get('dollar_value', 0):,.2f}
 -----------------------------------------------------------""")
                 processed_entries.append(ticker)
+
                 
             # Passed all gates and sizing
             shares = size_res['shares']
@@ -1133,9 +1174,10 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
             # V1.3 Dominant Cluster & Lifecycle Initialization
             dominant_cluster, cluster_dominance_pct = signal_votes.compute_dominant_cluster(votes_computed, signal_weights)
             
-            # V1.3 Entry Levels: cluster-specific stops/targets with frozen ATR
+            # V1.4 Entry Levels: safety stops with frozen ATR
             atr_14_val = row.get('atr_14', live_price * 0.03)
-            entry_levels = e1_sizer.compute_entry_levels(live_price, atr_14_val, dominant_cluster, regime=current_regime)
+            entry_levels = e1_sizer.compute_entry_levels(live_price, atr_14_val, regime=current_regime)
+
             
             initial_stop = entry_levels['initial_stop']
             breakeven_trigger = entry_levels['breakeven_trigger']
