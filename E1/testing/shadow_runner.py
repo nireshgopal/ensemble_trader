@@ -416,37 +416,7 @@ def record_equity_curve(conn, sim_date: date, mock: MockAlpacaClient,
 # RESET SIM TABLES
 # =============================================================================
 
-def reset_sim_tables(conn, sim_run_id: Optional[str] = None):
-    """
-    Clears sim tables for a fresh run.
-    If sim_run_id provided, only clears that run's data.
-    Otherwise truncates all sim tables entirely.
-    """
-    tables = [
-        'sandbox.e1_sim_positions',
-        'sandbox.e1_sim_trade_log',
-        'sandbox.e1_sim_position_fills',
-        'sandbox.e1_sim_order_history',
-        'sandbox.e1_sim_reconciler_flags',
-        'sandbox.e1_sim_sector_caps_history',
-        'sandbox.e1_sim_beta_sweeper_log',
-        'sandbox.e1_sim_equity_curve',
-        'sandbox.e1_sim_run_manifest',
-    ]
-    if sim_run_id:
-        for t in tables:
-            try:
-                conn.execute(f"DELETE FROM {t} WHERE sim_run_id = ?", [sim_run_id])
-            except Exception:
-                pass
-        logger.info(f"[RESET] Cleared sim data for run_id={sim_run_id}")
-    else:
-        for t in tables:
-            try:
-                conn.execute(f"DELETE FROM {t}")
-            except Exception:
-                pass
-        logger.info("[RESET] All sim tables cleared")
+# [REMOVED] reset_sim_tables function was removed to prevent accidental data loss.
 
 # =============================================================================
 # FINAL REPORT
@@ -568,8 +538,7 @@ def run_shadow(start: date, end: date, inject_scenario: Optional[str] = None,
 
     sim_run_id = run_id if run_id else str(uuid.uuid4())[:12]
 
-    if reset:
-        reset_sim_tables(conn)
+    # [MODIFIED] reset logic removed for safety.
 
     # Override config to point at sim tables
     override_config_tables()
@@ -690,8 +659,7 @@ if __name__ == '__main__':
     parser.add_argument('--inject', type=str, default=None,
                         choices=['oco-failure', 'zero-price-guard', 'staleness-guard'],
                         help='Inject a failure scenario for plumbing stress testing')
-    parser.add_argument('--reset', action='store_true',
-                        help='Wipe all e1_sim_* tables before running')
+    # [REMOVED] --reset flag removed for safety.
     parser.add_argument('--verbose', action='store_true',
                         help='Enable DEBUG-level logging')
     parser.add_argument('--capital', type=float, default=50_000.0,
@@ -714,5 +682,5 @@ if __name__ == '__main__':
         start_dt = date.fromisoformat(args.start)
         end_dt = date.fromisoformat(args.end) if args.end else date.today()
         run_shadow(start=start_dt, end=end_dt,
-                   inject_scenario=args.inject, reset=args.reset, verbose=args.verbose, 
+                   inject_scenario=args.inject, reset=False, verbose=args.verbose, 
                    run_id=args.run_id, strict_edgar=args.strict_edgar)

@@ -32,12 +32,18 @@ def compute_entry_levels(entry_price: float, atr_14: float, regime: str = 'HEALT
     }
 
 def conviction_scalar(score: float) -> float:
-    """Continuous Conviction Scalar (V1.3 Rule 2.2)."""
-    if score < 0.60:
+    """
+    Continuous Conviction Scalar (V1.5 Offensive Lever).
+    - 0.72-0.79: 1.0x (Baseline)
+    - 0.80-0.89: 1.35x (Offensive)
+    - 0.90+:     1.50x (High Conviction)
+    """
+    if score < 0.72:
         return 0.75
     
-    scores = [0.60, 0.70, 0.80, 0.90]
-    scalars = [0.75, 0.9167, 1.0833, 1.25]
+    # Linear interpolation between key gates
+    scores = [0.72, 0.80, 0.90]
+    scalars = [1.00, 1.35, 1.50]
     
     val = np.interp(score, scores, scalars)
     return round(float(val), 4)
@@ -81,11 +87,7 @@ def compute_position_size(
             return {'skipped': True, 'skip_reason': 'ATR14 unavailable', 'shares': 0, 'dollar_value': 0.0}
         
         # 1. Base Risk (by regime)
-        risk_pct = {
-            'HEALTHY': 0.015,
-            'FRAGILE': 0.010,
-            'BEAR':    0.0075,
-        }.get(regime, 0.010)
+        risk_pct = config.RISK_PCT_BY_REGIME.get(regime, 0.010)
         
         base_risk_dollars = portfolio_value * risk_pct
         

@@ -930,7 +930,11 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
         min_cash_pct = config.MIN_CASH_PCT_BY_REGIME.get(current_regime, config.E1_CASH_FLOOR)
         min_cash_required = portfolio_value * min_cash_pct
 
+        entry_cap = config.DAILY_NEW_ENTRY_CAP.get(current_regime, 1)
         for _, row in candidates.iterrows():
+            if opened_count >= entry_cap:
+                logger.info(f"DAILY CAP REACHED: Limit of {entry_cap} entries for {current_regime} regime met. Skipping remaining candidates.")
+                break
             ticker = row['ticker']
 
             # Canonical sector: use manual override if configured, else provider mapping.
@@ -1115,7 +1119,8 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
             except Exception as e:
                 logger.warning(f"CTE lookup failed for {ticker}: {e}")
             
-            cte_mult_active = 1.0 # PHASE 1: Logging Only. Force to 1.0.
+            # PHASE 2: Activate the multiplier if config allows
+            cte_mult_active = cte_theoretical if config.cte_mult_active else 1.0
 
             # Call sizer
             size_res = e1_sizer.compute_position_size(

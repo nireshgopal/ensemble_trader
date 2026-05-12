@@ -14,28 +14,33 @@
 ---
 
 ## PHASE 1: CURRENT SESSION HANDOVER
-**Last Update**: 2026-05-09 23:30 (Post V1.5 Hardening)
+**Last Update**: 2026-05-12 (Post-Audit & CTE Activation)
 
-### 1. Status & Recent Wins (V1.5 Transition)
-- **V1.5 Governance Published**: Formally integrated **Pillar 7 (CTE)** risk-scaling, **PIT-Safe Fundamental Rules**, and **Structured Exit Taxonomy** into `E1_SPECIFICATION.md`.
-- **Module Hardening**:
-    - `exit_evaluator.py`: Implemented structured return dictionaries for explicit `exit_trigger` propagation (e.g., `TIME_EXIT_20D`, `SCORE_DECAY_VETO`).
-    - `e1_trader.py`: Integrated the **CTE "Observation Mode"** hook (multiplier logged at 1.0x).
-    - `e1_sizer.py`: Hardened sizing formula to support the triple-scalar stack (Conviction x S10 x CTE).
-- **Piotroski PIT Enforcement**: Refactored `piotroski.py` to block look-ahead bias in Yahoo data and propagate "Low Confidence" flags for thin history.
-- **Watchlist Enforcement**: Enforced mandatory `JOIN schwab.watchlists` in the main signal query to strictly limit the universe to the 895 audited tickers.
-- **Shadow Performance Tuning**: Optimized `shadow_runner.py` with SQL-side JSON extraction for rapid PIT lookups (Startup time reduced from 5 mins to 30 secs).
+### 1. Status & Recent Wins (V1.5 Production)
+- **13-Year Forensic Audit Verified**: Completed a sequential audit from **2014-2026**.
+    - Result: **+11.69% CAGR** (+320% total return).
+    - Fixed the Piotroski PIT argument swap; all fundamental lookups are now PIT-compliant.
+- **Pillar 7 (CTE) Activated**:
+    - Generated `sandbox.e1_cte_lookup` using Bayesian Shrinkage on 1,732 historical trades.
+    - Toggled `cte_mult_active = True` in `config.py`.
+- **Full 2026 Stress Test**:
+    - Confirmed **+12.37% YTD return** (Jan 1 - May 11) with CTE enabled.
+    - Alpha vs SPY: **+14.69%**.
+- **Operational Hardening**:
+    - Successfully redirected all `pixel-data-feeds` automation scripts (`run_0300pm_scanner.bat`, etc.) to the hardened `ensemble_trader` repository.
+    - Production is now running V1.5 core logic.
 
-### 2. Validation & Sanity (March-May Shadow Test)
-- **Status**: Ongoing validation of the March 2026 window.
-- **Universe Match**: Confirmed `refined.e1_piotroski_history` covers the 895 watchlist tickers.
-- **CTE Logging**: Verified that the theoretical CTE multiplier (VIX Momentum + Regime Age) is being calculated correctly and written to `e1_sim_trade_log` for attribution audit.
+### 2. Validation & Sanity (CTE Performance)
+- **Status**: Live & Validated.
+- **Key Insight**: CTE acts as a "Volatility Dampener." It reduces sizing during VIX spikes (e.g., early May 2026) to protect capital, while leaning into high-conviction "Healthy" regimes.
+- **Reconciler**: Confirmed the live reconciler is active and healing missing OCO orders in the Alpaca account.
 
 ### 3. Immediate Objectives (Next Session)
-- **CTE Validation Audit**: Review the `e1_sim_trade_log` for the March run to confirm `shrunk_cte_theoretical` distribution across the 2026 Fragile regime.
-- **Live Transition Planning**: Once observation mode confirms CTE accuracy, prepare the PR to toggle `cte_mult_active = True`.
-- **Schema Hardening**: Finalize the `E1POSITIONS` schema update for live CTE tracking.
+- **Alpha Decay Monitoring**: Monitor the newly added positions (including `GOOGL` and `SNX`) for Target 2 expansion.
+- **CTE Attribution Audit**: Periodically check `e1_trade_log` to verify that `cte_mult_used` aligns with the Bayesian table expectations.
+- **Almanac Exit Efficiency**: Evaluate the `CBRE` exit (+3.2% on May 8) to ensure the 18-day earnings buffer is providing optimal protection.
 
 ### 4. Environment State
-- **Production Readiness**: V1.5 core engine is hardened. 
-- **Data Source**: Strictly using `refined.e1_piotroski_history` for fundamentals. Yahoo fallbacks are disabled for shadow runs to maintain audit integrity.
+- **Production Status**: **LIVE (V1.5 Hardened)**.
+- **CTE Config**: `cte_mult_active = True`.
+- **Repository Sync**: Pipeline is permanently linked to `ensemble_trader` main branch.
