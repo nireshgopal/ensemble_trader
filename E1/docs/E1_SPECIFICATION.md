@@ -12,14 +12,16 @@
 Strategy E1 is a **Quality-First Ensemble** designed for 20-day alpha.
 
 ### Core Governance Rules
-- **The 0.65 Gate**: No entry unless score >= 0.65 (Healthy) or 0.60 (Bear).
+- **Regime-Aware Gates**: No entry unless score >= **0.72 (Healthy)**, **0.68 (Fragile)**, or **0.80 (Bear)**.
+- **Daily Entry Caps**: Max **2 new entries** in Healthy regimes; **1 new entry** in others.
 - **The 20-Day Horizon**: Mandatory time exit using `refined.price_history` as the authoritative calendar.
 - **Circuit Breaker**: Regime-Gated ATR hard stop (6.0x/7.0x/8.0x).
 - **Breakeven Progression**: Stop advances to entry (+0.01) at +1.5x ATR.
 - **Decay Veto**: Exit if score drops 40% from baseline (reset on regime transition).
 - **Almanac Vetoes**: Entry (5d window) and Exit (2d window) safety guards.
 - **Gap-Up Veto**: No entry if live quote > 4.0% above prev close.
-- **Pillar 7 (CTE)**: **(NEW)** Dynamic sizing multiplier (0.9x to 1.1x) based on VIX Momentum and Regime Age.
+- **Exhaustion Penalty**: Integrated RSI and Drawdown Recovery weights to penalize overextended setups.
+- **Pillar 7 (CTE)**: **(AUDIT MODE)** Theoretical sizing multiplier (0.9x to 1.1x) logged but currently inactive (1.0x) for the V1.5 Gold Run.
 
 ---
 
@@ -27,22 +29,23 @@ Strategy E1 is a **Quality-First Ensemble** designed for 20-day alpha.
 Final risk unit formula:
 `risk_dollars = Base_Risk * Conviction_Scalar * S10_Macro_Scalar * CTE_Multiplier`
 
-### 3.1 Continuous Conviction Scalar
-- **Score 0.60**: 0.75x Scalar
-- **Score 0.90**: 1.25x Scalar
-- **Formula**: `0.75 + (score - 0.60) / 0.30 * 0.50` (Capped at 1.25x)
+### 3.1 Continuous Conviction Scalar (Offensive Lever)
+- **Score 0.68**: 1.00x Scalar (Baseline)
+- **Score 0.80**: 1.35x Scalar
+- **Score 0.90+**: 1.50x Scalar
+- **Formula**: Linear interpolation between tiers. 
 
-### 3.2 Dynamic Macro Scaling (S10)
-- **Panic Recovery**: 1.25x
-- **Credit Stress**: 0.50x
-- **Credit Veto**: 0.00x (HY > 5.5)
+### 3.2 Regime-Based Risk Units
+- **HEALTHY**: 1.50% risk per trade.
+- **FRAGILE**: 0.50% risk per trade.
+- **BEAR**: 0.25% risk per trade.
 
 ### 3.3 Contextual Trade Estimator (CTE) - Pillar 7
 CTE scales risk based on historical expectancy of the current "Cell":
 - **VIX Momentum**: Quantile-binned 20-day VIX velocity (FALLING, STABLE, RISING).
 - **Regime Age**: Days since last regime transition (FRESH, ESTABLISHED, MATURE).
-- **Calibration**: Bayesian shrinkage (k=11.24) applied to the 12-year Audit Gold set.
-- **Safety**: Hard cap of 1.50x on the combined scalar product (Conviction * CTE * S10).
+- **Status**: Currently **DISABLED** (1.0x) for the 13-year audit to establish a raw baseline.
+- **Safety**: Hard cap of 1.75x on the combined scalar product (Conviction * CTE * S10).
 
 ---
 

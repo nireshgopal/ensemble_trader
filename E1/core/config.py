@@ -23,7 +23,7 @@ TIME_STOP_DAYS = 20           # Max holding period without gain
 # -- Regime-aware Limits (Transitioning to Sector Budgets) --
 MAX_POSITIONS_BY_REGIME = {'HEALTHY': 10, 'FRAGILE': 6, 'BEAR': 4} # Legacy reference
 MIN_CASH_PCT_BY_REGIME = {'HEALTHY': 0.15, 'FRAGILE': 0.30, 'BEAR': 0.45}
-ENTRY_SCORE_THRESHOLD = {'HEALTHY': 0.72, 'FRAGILE': 0.30, 'BEAR': 0.80}
+ENTRY_SCORE_THRESHOLD = {'HEALTHY': 0.72, 'FRAGILE': 0.68, 'BEAR': 0.80}
 RISK_PCT_BY_REGIME = {'HEALTHY': 0.015, 'FRAGILE': 0.005, 'BEAR': 0.0025}
 DAILY_NEW_ENTRY_CAP = {'HEALTHY': 2, 'FRAGILE': 1, 'BEAR': 1}
 
@@ -195,7 +195,7 @@ MARKET_REGIME_TABLE = "refined.market_regime"
 IC_HISTORY_TABLE = "refined.ic_history"
 
 # ── Pillar 7 (Contextual Training Engine) ─────────────────────────────────
-cte_mult_active = True
+cte_mult_active = False
 CTE_LOOKUP_TABLE = "sandbox.e1_cte_lookup"
 
 # Note: E1 primary logic is in signal_votes.py and e1_trader.py
