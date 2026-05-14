@@ -77,4 +77,23 @@ To maintain a clean CTE training set, exits are categorized by **Structured Trig
 | **Audit Gold (2014-2026)** | 1.13 | 18.1% |
 | **Live Gate (60 Session)** | **>= 0.85** | - |
 
-**End of Specification V1.5**
+---
+
+## 7. Strategy E1 V1.6: Healthy Bull Hold Extension (Offensive Gear)
+To mitigate structural lag in strong bull markets, the 20-day time exit is conditionally uncapped to **35 days** if the specific "Healthy Bull" continuation thesis remains intact.
+
+### 7.1 Extension Eligibility (The Day 20 Gate)
+On trading day 20, a position is eligible for a **15-day extension** if and only if:
+- **Condition 1: Market Regime**: Current regime is **HEALTHY**.
+- **Condition 2: Trend Confirmation**: SPY close is above both 50-day and 200-day SMA.
+- **Condition 3: Volatility Environment**: VIX (Prior Day Close) is **≤ 18.0**.
+- **Condition 4: Current Conviction**: Current ensemble score remains **≥ 0.72** (consistent with HEALTHY entry threshold).
+- **Condition 5: Conviction at Entry**: Trade was a "High Conviction" entry (Score **≥ 0.80**) to ensure quality foundation.
+- **Condition 6: Profitability Gate**: Trade must be at or above **T1 Profit (+2.0 ATR)** to prevent extending losers.
+
+### 7.2 Extended State Governance
+- **New Exit Trigger**: `TIME_EXIT_EXT` (Day 35 Hard Cap).
+- **Extension Stop-Loss**: Trailing multiplier is widened to **4.0x ATR** (Ratchet-Only) to provide "breathing room" for the momentum run while protecting the majority of the profit.
+- **Defensive Precedence**: All defensive exits (`REGIME_EXIT`, `ALMANAC_EXIT`, `SCORE_DECAY`) take precedence and will terminate the extension immediately if triggered.
+
+**End of Specification V1.6**

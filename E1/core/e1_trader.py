@@ -408,26 +408,38 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
     candidates = pd.DataFrame()
 
     # 5. Load today's signals & market regime
+    # V1.6: Optimized to avoid choking on large window functions in a loop
     macro_query = f"""
-        WITH skew_latest AS (
+        WITH spy_data AS (
             SELECT 
-                AVG(skew_25d) OVER (ORDER BY date ROWS BETWEEN 4 PRECEDING AND CURRENT ROW) as skew_5d,
-                AVG(skew_25d) OVER (ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) as skew_20d
-            FROM refined.spy_vol_skew
-            WHERE date <= ?
-            ORDER BY date DESC LIMIT 1
+                date,
+                close,
+                AVG(close) OVER (ORDER BY date ROWS BETWEEN 49 PRECEDING AND CURRENT ROW) as sma_50,
+                AVG(close) OVER (ORDER BY date ROWS BETWEEN 199 PRECEDING AND CURRENT ROW) as sma_200
+            FROM refined.price_history
+            WHERE ticker = 'SPY'
         )
         SELECT 
             r.date,
             r.regime,
             r.vix_close, 
             m.hy_spread,
-            (SELECT COALESCE(skew_5d - skew_20d, 0.0) FROM skew_latest) as skew_compression
+            COALESCE((
+                SELECT skew_25d - AVG(skew_25d) OVER (ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW)
+                FROM refined.spy_vol_skew
+                WHERE date <= ?
+                ORDER BY date DESC LIMIT 1
+            ), 0.0) as skew_compression,
+            s.sma_50 as spy_sma_50,
+            s.sma_200 as spy_sma_200,
+            s.close as spy_close
         FROM {config.MARKET_REGIME_TABLE} r
         JOIN refined.macro_daily m ON r.date = m.date
+        LEFT JOIN spy_data s ON r.date = s.date
         WHERE r.date <= ?
         ORDER BY r.date DESC LIMIT 2
     """
+    # Note: We only need two parameters now as we simplified the subqueries
     macro_rows = conn.execute(macro_query, [today_str, today_str]).fetchall()
     
     if not macro_rows:
@@ -443,6 +455,12 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
     vix_close = macro_row[2]
     hy_spread = macro_row[3]
     skew_compression = macro_row[4]
+    
+    # V1.6: Hold Extension Macro (Prior Day - Day 19)
+    vix_prior = macro_rows[1][2] if len(macro_rows) > 1 else vix_close
+    spy_sma50_prior = macro_rows[1][5] if len(macro_rows) > 1 else None
+    spy_sma200_prior = macro_rows[1][6] if len(macro_rows) > 1 else None
+    spy_close_prior = macro_rows[1][7] if len(macro_rows) > 1 else None
 
     # Safe logging for macro values (handle None)
     vix_str = f"{vix_close:.2f}" if vix_close is not None else "N/A"
@@ -585,7 +603,11 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
                 'highest_close': mdata.get('close_price', 0.0),  # Will use DB highest_close_since_t1 if available
                 'atr_14': mdata.get('atr_14'),
                 'rsi_14': mdata.get('rsi_14'),
-                'pnl_pct': (mdata.get('close_price', 0.0) - pos['entry_price']) / pos['entry_price'] if pos['entry_price'] > 0 else 0
+                'pnl_pct': (mdata.get('close_price', 0.0) - pos['entry_price']) / pos['entry_price'] if pos['entry_price'] > 0 else 0,
+                'vix_prior': vix_prior,
+                'spy_sma50_prior': spy_sma50_prior,
+                'spy_sma200_prior': spy_sma200_prior,
+                'spy_close_prior': spy_close_prior
             }
             # Use DB-stored highest_close_since_t1 if available (for trailing stop)
             db_highest = pos.get('highest_close_since_t1')
@@ -771,6 +793,27 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
                 audit_results.append({'ticker': ticker, 'action': 'UPDATE_TRAILING_STOP', 'reason': eval_result.get('reason', ''), 'pnl_pct': mdata_dict['pnl_pct']})
                 continue
             
+            if eval_result['action'] == 'EXTEND_HOLD':
+                logger.info(f"  [{ticker}] HOLD EXTENSION: {eval_result['reason']}")
+                if not simulate and p_id is not None:
+                    conn.execute(f"""
+                        UPDATE {config.E1_POSITIONS_TABLE} 
+                        SET stop_stage = 'TRAILING', trailing_mult_override = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, [eval_result['new_trail_mult'], p_id])
+                    
+                # Log the extension in trade_log (always in sim/shadow)
+                conn.execute(f"""
+                    INSERT INTO {config.E1_TRADE_LOG_TABLE} (trade_date, ticker, action, trigger, pnl_pct, reason, sim_run_id)
+                    VALUES (?, ?, 'EXTEND_HOLD', 'HEALTHY_BULL_EXT', ?, ?, ?)
+                """, [today_str, ticker, mdata_dict['pnl_pct'], eval_result.get('reason', ''), run_id])
+                    
+                if not simulate and p_id is None:
+                    logger.warning(f"  [WARN] {ticker} skipped DB update for EXTEND_HOLD due to NULL id")
+                audit_results.append({'ticker': ticker, 'action': 'EXTEND_HOLD', 'reason': eval_result.get('reason', ''), 'pnl_pct': mdata_dict['pnl_pct']})
+                continue
+
             # --- FIX 1: Alpaca Position Guardrail before Sell ---
             if eval_result['action'] in ('SELL', 'SELL_HALF', 'EMERGENCY_MARKET_EXIT', 'SUBMIT_STOP_LIMIT', 'CLOSE_POSITION'):
                 alpaca_qty = alpaca_positions.get(ticker, 0)

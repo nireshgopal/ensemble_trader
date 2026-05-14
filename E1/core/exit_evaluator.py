@@ -87,9 +87,12 @@ class StopLifecycleManager:
                 'reason': 'Breakeven trigger hit.'
             }
             
-        # 3. TRAILING CHECK (Optional V1.4 Extension)
+        # 3. TRAILING CHECK (V1.6: 1.5x for normal, 4.0x for extended holds)
         if stop_stage in ('BREAKEVEN', 'TRAILING') and highest_close and atr > 0:
-            trail_mult = position.get('trailing_mult_override', 1.5)
+            # Extended holds (TRAILING) use 4x ATR, normal holds (BREAKEVEN) use 1.5x
+            default_mult = 4.0 if stop_stage == 'TRAILING' else 1.5
+            trail_mult = position.get('trailing_mult_override', default_mult)
+            
             potential_stop = highest_close - (atr * trail_mult)
             current_stop = position.get('stop_loss', 0.0)
             
@@ -97,15 +100,29 @@ class StopLifecycleManager:
                 return {
                     'action': 'UPDATE_TRAILING_STOP',
                     'new_stop': potential_stop,
-                    'reason': 'Trailing stop ratcheted up.'
+                    'reason': f'Trailing stop ratcheted up to ${potential_stop:.2f} ({trail_mult}x ATR)'
                 }
                 
         return {'action': 'NONE'}
 
-    def evaluate_signal_decay(self, position: dict, current_score: float, today: date, current_regime: str = None, yesterday_regime: str = None, conn=None) -> dict:
+    def is_healthy_bull(self, mdata: dict, current_regime: str) -> bool:
+        """V1.6: Check for Healthy Bull sub-state using Day 19 data."""
+        if current_regime != 'HEALTHY':
+            return False
+        vix = mdata.get('vix_prior')
+        spy_50 = mdata.get('spy_sma50_prior')
+        spy_200 = mdata.get('spy_sma200_prior')
+        spy_close = mdata.get('spy_close_prior')
+        
+        if vix is None or spy_50 is None or spy_200 is None or spy_close is None:
+            return False
+            
+        return vix <= 18.0 and spy_close > spy_50 and spy_close > spy_200
+
+    def evaluate_signal_decay(self, position: dict, current_score: float, today: date, current_regime: str = None, yesterday_regime: str = None, conn=None, mdata: dict = None) -> dict:
         """
         Signal-Driven Exits (Config D + Config B Veto):
-        1. Primary: Flat 20-day time exit.
+        1. Primary: Flat 20-day time exit (V1.6: Conditional Extension to 35d).
         2. Veto: 40% score decay from entry score (if held > 5 days).
         """
         entry_date = self._parse_entry_date(position)
@@ -119,24 +136,72 @@ class StopLifecycleManager:
             cal_days = (today - entry_date).days
             days_held = int(cal_days * 5 / 7)
         
-        # 1. Flat 20-day time exit (Primary)
-        if days_held >= 20:
-            return {
-                'action': 'CLOSE_POSITION',
-                'exit_trigger': 'TIME_EXIT_20D',
-                'reason': f'Held {days_held} trading days',
-                'urgency': 'EOD_LIMIT'
-            }
-            
-        # 2. Almanac Exit Veto
+        # 1. Almanac Exit Veto (Priority check before extension)
         days_to_earn = position.get('days_to_earnings')
         if earnings_exit_veto(days_to_earnings=days_to_earn, days_held=days_held):
             return {
                 'action': 'CLOSE_POSITION',
-                'exit_trigger': 'ALMANAC_EXIT_VETO',
+                'exit_trigger': 'ALMANAC_EXIT',
                 'reason': f'Earnings in {days_to_earn}d',
                 'urgency': 'EOD_LIMIT'
             }
+
+        # 2. Time Exit / Extension Gate (V1.6)
+        if days_held >= 20:
+            if days_held >= 35:
+                return {
+                    'action': 'CLOSE_POSITION',
+                    'exit_trigger': 'TIME_EXIT_EXT',
+                    'reason': f'Max extended hold of {days_held} trading days reached',
+                    'urgency': 'EOD_LIMIT'
+                }
+            
+            # Extension Check
+            if days_held >= 20 and position.get('stop_stage') != 'TRAILING':
+                # V1.6: Healthy Bull Extension Gate
+                is_healthy = self.is_healthy_bull(mdata, current_regime)
+                has_min_conviction = entry_score >= 0.80
+                has_min_score = (current_score or 0) >= 0.72
+                
+                # Calculate PnL in ATR units
+                current_pnl_atr = 0.0
+                if position.get('entry_price', 0) > 0 and position.get('atr_at_entry', 0) > 0:
+                    current_pnl_dollars = mdata.get('current_price', 0) - position['entry_price']
+                    current_pnl_atr = current_pnl_dollars / position['atr_at_entry']
+                
+                has_min_pnl = current_pnl_atr >= 2.0  # T1 Profitability
+                
+                eligible = is_healthy and has_min_conviction and has_min_score and has_min_pnl
+                
+                if eligible:
+                    return {
+                        'action': 'EXTEND_HOLD',
+                        'new_stop_stage': 'TRAILING',
+                        'new_trail_mult': 4.0,
+                        'reason': f'Healthy Bull extension triggered at day {days_held} (Score: {current_score:.2f}, PnL: {current_pnl_atr:.1f}x ATR)'
+                    }
+                else:
+                    return {
+                        'action': 'CLOSE_POSITION',
+                        'exit_trigger': 'TIME_EXIT_20D',
+                        'reason': f'Held {days_held} trading days (Not eligible for extension)',
+                        'urgency': 'EOD_LIMIT'
+                    }
+            
+            # If already extended (TRAILING), check if we should still hold
+            if position.get('stop_stage') == 'TRAILING':
+                if not self.is_healthy_bull(mdata, current_regime):
+                    return {
+                        'action': 'CLOSE_POSITION',
+                        'exit_trigger': 'REGIME_EXIT',
+                        'reason': f'Market exited Healthy Bull state during extension at day {days_held}',
+                        'urgency': 'EOD_LIMIT'
+                    }
+                else:
+                    return {
+                        'action': 'HOLD',
+                        'reason': f'Continuing extended hold in Healthy Bull state (Day {days_held})'
+                    }
 
         # 3. Score Decay Veto
         entry_score = position.get('entry_score', 0.65)
@@ -209,7 +274,7 @@ def evaluate(position: dict, mdata: dict, current_regime: str = 'HEALTHY', yeste
     # 2. Time / Decay
     eval_today = today if today is not None else date.today()
     decay_res = slm.evaluate_signal_decay(position, mdata.get('current_score'), eval_today, 
-                                         current_regime=current_regime, yesterday_regime=yesterday_regime, conn=conn)
+                                         current_regime=current_regime, yesterday_regime=yesterday_regime, conn=conn, mdata=mdata)
     
     if decay_res['action'] == 'CLOSE_POSITION':
         return {
@@ -219,5 +284,8 @@ def evaluate(position: dict, mdata: dict, current_regime: str = 'HEALTHY', yeste
             'exit_price': mdata.get('current_price'),
             'urgency': decay_res.get('urgency', 'EOD_LIMIT')
         }
+    
+    if decay_res['action'] == 'EXTEND_HOLD':
+        return decay_res # Propagate extension action directly to trader
     
     return decay_res if decay_res['action'] == 'HOLD' else {'action': 'HOLD', 'reason': 'Thesis Intact'}
