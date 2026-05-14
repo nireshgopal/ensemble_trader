@@ -93,7 +93,7 @@ On trading day 20, a position is eligible for a **15-day extension** if and only
 
 ### 7.2 Extended State Governance
 - **New Exit Trigger**: `TIME_EXIT_EXT` (Day 35 Hard Cap).
-- **Extension Stop-Loss**: Trailing multiplier is widened to **4.0x ATR** (Ratchet-Only) to provide "breathing room" for the momentum run while protecting the majority of the profit.
+- **Extension Stop-Loss**: Trailing multiplier is widened to **2.5x ATR** (Ratchet-Only) to provide "breathing room" for the momentum run while protecting the majority of the profit.
 - **Defensive Precedence**: All defensive exits (`REGIME_EXIT`, `ALMANAC_EXIT`, `SCORE_DECAY`) take precedence and will terminate the extension immediately if triggered.
 
 **End of Specification V1.6**

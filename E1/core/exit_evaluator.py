@@ -159,6 +159,7 @@ class StopLifecycleManager:
             # Extension Check
             if days_held >= 20 and position.get('stop_stage') != 'TRAILING':
                 # V1.6: Healthy Bull Extension Gate
+                entry_score = position.get('entry_score', 0.0)
                 is_healthy = self.is_healthy_bull(mdata, current_regime)
                 has_min_conviction = entry_score >= 0.80
                 has_min_score = (current_score or 0) >= 0.72
@@ -170,14 +171,26 @@ class StopLifecycleManager:
                     current_pnl_atr = current_pnl_dollars / position['atr_at_entry']
                 
                 has_min_pnl = current_pnl_atr >= 2.0  # T1 Profitability
-                
                 eligible = is_healthy and has_min_conviction and has_min_score and has_min_pnl
                 
                 if eligible:
+                    # V1.6: Trigger Extension
+                    trail_mult = 2.5
+                    highest_close = max(position.get('highest_close', 0), mdata.get('current_price', 0))
+                    potential_stop = highest_close - (position.get('atr_at_entry', 0) * trail_mult)
+                    current_stop = position.get('stop_loss', 0)
+                    
+                    if potential_stop > current_stop:
+                        return {
+                            'action': 'UPDATE_TRAILING_STOP',
+                            'new_stop': potential_stop,
+                            'new_trail_mult': trail_mult,
+                            'reason': f'Healthy Bull extension ratcheting (Stop: {potential_stop:.2f})'
+                        }
+                        
                     return {
                         'action': 'EXTEND_HOLD',
-                        'new_stop_stage': 'TRAILING',
-                        'new_trail_mult': 4.0,
+                        'new_trail_mult': trail_mult,
                         'reason': f'Healthy Bull extension triggered at day {days_held} (Score: {current_score:.2f}, PnL: {current_pnl_atr:.1f}x ATR)'
                     }
                 else:
