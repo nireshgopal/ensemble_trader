@@ -440,7 +440,9 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
         ORDER BY r.date DESC LIMIT 2
     """
     # Note: We only need two parameters now as we simplified the subqueries
-    macro_rows = conn.execute(macro_query, [today_str, today_str]).fetchall()
+    # V1.6: Use dictionary-based records for robust named-column access
+    macro_df = conn.execute(macro_query, [today_str, today_str]).df()
+    macro_rows = macro_df.to_dict('records')
     
     if not macro_rows:
         logger.error("FATAL: Could not fetch Macro/Regime context. Aborting.")
@@ -449,18 +451,25 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
         return
 
     macro_row = macro_rows[0]
-    macro_date = macro_row[0]
-    current_regime = macro_row[1]
-    yesterday_regime = macro_rows[1][1] if len(macro_rows) > 1 else None
-    vix_close = macro_row[2]
-    hy_spread = macro_row[3]
-    skew_compression = macro_row[4]
+    macro_date = pd.to_datetime(macro_row['date']).date()
+    current_regime = macro_row['regime']
+    yesterday_regime = macro_rows[1]['regime'] if len(macro_rows) > 1 else None
     
-    # V1.6: Hold Extension Macro (Prior Day - Day 19)
-    vix_prior = macro_rows[1][2] if len(macro_rows) > 1 else vix_close
-    spy_sma50_prior = macro_rows[1][5] if len(macro_rows) > 1 else None
-    spy_sma200_prior = macro_rows[1][6] if len(macro_rows) > 1 else None
-    spy_close_prior = macro_rows[1][7] if len(macro_rows) > 1 else None
+    # Core Macro Signals
+    vix_close = macro_row['vix_close']
+    hy_spread = macro_row['hy_spread']
+    skew_compression = macro_row['skew_compression']
+    
+    # Evaluator Inputs (V1.6 Bridge)
+    spy_price = macro_row['spy_close']
+    spy_sma50 = macro_row['spy_sma_50']
+    spy_sma200 = macro_row['spy_sma_200']
+    
+    # V1.6: Hold Extension Macro (Prior Day)
+    vix_prior = macro_rows[1]['vix_close'] if len(macro_rows) > 1 else vix_close
+    spy_sma50_prior = macro_rows[1]['spy_sma_50'] if len(macro_rows) > 1 else None
+    spy_sma200_prior = macro_rows[1]['spy_sma_200'] if len(macro_rows) > 1 else None
+    spy_close_prior = macro_rows[1]['spy_close'] if len(macro_rows) > 1 else None
 
     # Safe logging for macro values (handle None)
     vix_str = f"{vix_close:.2f}" if vix_close is not None else "N/A"
@@ -605,6 +614,10 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
                 'rsi_14': mdata.get('rsi_14'),
                 'pnl_pct': (mdata.get('close_price', 0.0) - pos['entry_price']) / pos['entry_price'] if pos['entry_price'] > 0 else 0,
                 'vix_prior': vix_prior,
+                'vix_current': vix_close,
+                'spy_sma50': spy_sma50,
+                'spy_sma200': spy_sma200,
+                'spy_price': spy_price,
                 'spy_sma50_prior': spy_sma50_prior,
                 'spy_sma200_prior': spy_sma200_prior,
                 'spy_close_prior': spy_close_prior

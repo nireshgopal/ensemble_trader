@@ -91,6 +91,9 @@ On trading day 20, a position is eligible for a **15-day extension** if and only
 - **Condition 5: Conviction at Entry**: Trade was a "High Conviction" entry (Score **≥ 0.80**) to ensure quality foundation.
 - **Condition 6: Profitability Gate**: Trade must be at or above **T1 Profit (+2.0 ATR)** to prevent extending losers.
 
+> [!IMPORTANT]
+> **Metadata Requirements**: The Healthy Bull gate requires the following keys in `mdata_dict`: `vix_current`, `spy_price`, `spy_sma50`, `spy_sma200`. These must be mapped from `refined.market_regime` (vix_close, spy_close, etc.) by the trader engine. Missing keys must trigger a HARD FAIL in simulation to prevent silent logic gaps.
+
 ### 7.2 Extended State Governance
 - **New Exit Trigger**: `TIME_EXIT_EXT` (Day 35 Hard Cap).
 - **Extension Stop-Loss**: Trailing multiplier is widened to **2.5x ATR** (Ratchet-Only) to provide "breathing room" for the momentum run while protecting the majority of the profit.

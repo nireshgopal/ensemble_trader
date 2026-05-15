@@ -14,33 +14,26 @@
 ---
 
 ## PHASE 1: CURRENT SESSION HANDOVER
-**Last Update**: 2026-05-12 (Post-Audit & CTE Activation)
+**Last Update**: 2026-05-14 19:35 (V1.6 Release "Hardened" - Iteration 14)
 
-### 1. Status & Recent Wins (V1.5 Production)
-- **13-Year Forensic Audit Verified**: Completed a sequential audit from **2014-2026**.
-    - Result: **+11.69% CAGR** (+320% total return).
-    - Fixed the Piotroski PIT argument swap; all fundamental lookups are now PIT-compliant.
-- **Pillar 7 (CTE) Activated**:
-    - Generated `sandbox.e1_cte_lookup` using Bayesian Shrinkage on 1,732 historical trades.
-    - Toggled `cte_mult_active = True` in `config.py`.
-- **Full 2026 Stress Test**:
-    - Confirmed **+12.37% YTD return** (Jan 1 - May 11) with CTE enabled.
-    - Alpha vs SPY: **+14.69%**.
-- **Operational Hardening**:
-    - Successfully redirected all `pixel-data-feeds` automation scripts (`run_0300pm_scanner.bat`, etc.) to the hardened `ensemble_trader` repository.
-    - Production is now running V1.5 core logic.
+### 1. Status & Recent Wins (V1.6 Final Calibration)
+- **V1.6 Release Locked**: Repository tagged as `E1_V1.6_RELEASE`.
+- **Offensive Gear Implemented**: Added a disciplined Offensive Gear that recovers ~3.7% of 2019’s bull-year lag without harming bear-year behavior.
+- **Selection Gate (0.72)**: The prior decayed-thesis "bleeder" cohort (0.65–0.72 Day-20 scores) is fully filtered out.
+- **Success Paradox Resolved**: Fixed a critical bug where profitable trades already in the `TRAILING` stage were being disqualified from extensions. 
+- **VIX Metadata Fix**: Corrected the column mapping in `e1_trader.py` (`vix_current` -> `vix_close`) to enable the Healthy Bull macro-gate.
+- **Hard-Fail Governance**: Implemented `STRICT_METADATA_CHECK` in `config.py`. The evaluator now **HARD FAILS** if macro keys are missing, preventing silent logic gaps.
 
-### 2. Validation & Sanity (CTE Performance)
-- **Status**: Live & Validated.
-- **Key Insight**: CTE acts as a "Volatility Dampener." It reduces sizing during VIX spikes (e.g., early May 2026) to protect capital, while leaning into high-conviction "Healthy" regimes.
-- **Reconciler**: Confirmed the live reconciler is active and healing missing OCO orders in the Alpaca account.
+### 2. Forensic Learnings (The "Silent Veto" Audit)
+- **Success Paradox**: Don't use `stop_stage != 'TRAILING'` to gate extensions in E1, as all extension-eligible winners have already hit the +1.5x ATR breakeven trigger and moved into the trailing stage.
+- **Plumbing Awareness**: Always verify `mdata_dict` injection keys against the database schema before assuming they exist in the evaluator.
 
-### 3. Immediate Objectives (Next Session)
-- **Alpha Decay Monitoring**: Monitor the newly added positions (including `GOOGL` and `SNX`) for Target 2 expansion.
-- **CTE Attribution Audit**: Periodically check `e1_trade_log` to verify that `cte_mult_used` aligns with the Bayesian table expectations.
-- **Almanac Exit Efficiency**: Evaluate the `CBRE` exit (+3.2% on May 8) to ensure the 18-day earnings buffer is providing optimal protection.
+### 3. Immediate Objectives (Next Phase)
+- **2023 FINAL Validation (v4)**: Currently running to confirm the alpha lift with the "Success Paradox" and "VIX Gate" fixes.
+- **2026 Modern Audit**: Execute after 2023 completion to verify the strategy in the current 2026 regime.
+- **Governance Review**: Ensure `compute_signal_ic.py` continues to write to `_CANDIDATE.json` to prevent accidental weight overwrites.
 
 ### 4. Environment State
-- **Production Status**: **LIVE (V1.5 Hardened)**.
-- **CTE Config**: `cte_mult_active = True`.
-- **Repository Sync**: Pipeline is permanently linked to `ensemble_trader` main branch.
+- **Production Status**: **V1.6 RELEASE (Hardened)**.
+- **Code State**: Fixed stage-veto / Fixed VIX metadata injection.
+- **Safety**: `STRICT_METADATA_CHECK = True` is active in `config.py`.

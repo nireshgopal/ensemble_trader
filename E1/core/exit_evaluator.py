@@ -107,17 +107,21 @@ class StopLifecycleManager:
 
     def is_healthy_bull(self, mdata: dict, current_regime: str) -> bool:
         """V1.6: Check for Healthy Bull sub-state using Day 19 data."""
-        if current_regime != 'HEALTHY':
-            return False
-        vix = mdata.get('vix_prior')
-        spy_50 = mdata.get('spy_sma50_prior')
-        spy_200 = mdata.get('spy_sma200_prior')
-        spy_close = mdata.get('spy_close_prior')
+        # V1.6: Metadata Integrity Check (Hard Fail on missing keys)
+        required_keys = ['vix_current', 'spy_price', 'spy_sma50', 'spy_sma200']
+        missing = [k for k in required_keys if k not in mdata]
+        if missing:
+            raise KeyError(f"CRITICAL METADATA MISSING: {missing}. Healthy Bull logic cannot be validated.")
+
+        vix = mdata['vix_current']
+        spy_price = mdata['spy_price']
+        sma50 = mdata['spy_sma50']
+        sma200 = mdata['spy_sma200']
         
-        if vix is None or spy_50 is None or spy_200 is None or spy_close is None:
+        if vix is None or sma50 is None or sma200 is None or spy_price is None:
             return False
             
-        return vix <= 18.0 and spy_close > spy_50 and spy_close > spy_200
+        return vix <= 18.0 and spy_price > sma50 and spy_price > sma200
 
     def evaluate_signal_decay(self, position: dict, current_score: float, today: date, current_regime: str = None, yesterday_regime: str = None, conn=None, mdata: dict = None) -> dict:
         """
@@ -157,7 +161,7 @@ class StopLifecycleManager:
                 }
             
             # Extension Check
-            if days_held >= 20 and position.get('stop_stage') != 'TRAILING':
+            if days_held >= 20 and position.get('status') == 'OPEN':
                 # V1.6: Healthy Bull Extension Gate
                 entry_score = position.get('entry_score', 0.0)
                 is_healthy = self.is_healthy_bull(mdata, current_regime)

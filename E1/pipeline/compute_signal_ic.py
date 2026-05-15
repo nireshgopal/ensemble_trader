@@ -230,9 +230,9 @@ def run_ic_computation():
                 'direction': d.get(sig, 1)
             })
 
-    with open('docs/signal_weights.json', 'w') as f:
+    with open('docs/signal_weights_CANDIDATE.json', 'w') as f:
         json.dump(weights_doc, f, indent=2)
-    print("Saved to docs/signal_weights.json")
+    print("Saved to docs/signal_weights_CANDIDATE.json")
 
     weights_history_df = pd.DataFrame(weights_history_rows)
     con_write.execute("INSERT OR REPLACE INTO refined.weights_history SELECT * FROM weights_history_df")
