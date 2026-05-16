@@ -10,11 +10,8 @@ from E1.core.config import DB_PATH
 
 sys.path.insert(0, os.getcwd())
 
-
 SIGNALS = [
-    'sig_ma_crossover',
     'sig_rs_3month',
-    'sig_sector_momentum',
     'sig_ma_slope',
     'sig_rsi_oversold',
     'sig_drawdown_recovery',
@@ -23,7 +20,7 @@ SIGNALS = [
 HORIZONS = [5, 10, 20, 40]
 
 CLUSTERS = {
-    'trend':          ['sig_ma_crossover', 'sig_rs_3month', 'sig_sector_momentum', 'sig_ma_slope'],
+    'trend':          ['sig_rs_3month', 'sig_ma_slope'],
     'mean_reversion': ['sig_rsi_oversold', 'sig_drawdown_recovery'],
     'quality':        ['sig_fundamental'],
 }
@@ -132,9 +129,7 @@ def run_ic_computation():
             e.date,
             e.close_price,
             e.regime,
-            e.sig_ma_crossover,
             e.sig_rs_3month,
-            e.sig_sector_momentum,
             e.sig_ma_slope,
             e.sig_rsi_oversold,
             e.sig_drawdown_recovery,
@@ -204,7 +199,7 @@ def run_ic_computation():
         print(f"Insufficient data for 90-day rolling IC ({len(df_recent)} rows). Skipping.")
 
     # --- Regenerate signal_weights.json and Persist to weights_history ---
-    from refine.engine.signal_votes import load_regime_weights, CANONICAL_SIGNALS
+    from E1.core.signal_votes import load_regime_weights, CANONICAL_SIGNALS
     rw = load_regime_weights('docs/signal_weights.json')
     weights_doc = {}
     weights_history_rows = []

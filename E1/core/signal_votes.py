@@ -23,21 +23,18 @@ import os
 
 # Canonical signal names — single source of truth
 CANONICAL_SIGNALS = [
-    'sig_ma_crossover',
     'sig_rs_3month',
-    'sig_sector_momentum',
     'sig_ma_slope',
     'sig_rsi_oversold',
     'sig_drawdown_recovery',
     'sig_fundamental',
-    'sig_earnings_acceleration',
 ]
 
 # Cluster definitions
 CLUSTERS = {
-    'trend':          ['sig_ma_crossover', 'sig_rs_3month', 'sig_sector_momentum', 'sig_ma_slope'],
+    'trend':          ['sig_rs_3month', 'sig_ma_slope'],
     'mean_reversion': ['sig_rsi_oversold', 'sig_drawdown_recovery'],
-    'quality':        ['sig_fundamental', 'sig_earnings_acceleration'],
+    'quality':        ['sig_fundamental'],
 }
 
 # Legacy CSV name mapping
@@ -184,6 +181,13 @@ def load_regime_weights(path, lambda_shrink=0.3):
         print(f"Warning: {path} not found. Using equal weights fallback.")
         return {r: safe for r in ['HEALTHY', 'FRAGILE', 'BEAR', 'SAFE_DEFAULT']}
 
+    # --- GOVERNANCE INTERLOCK: Weights Mode Check ---
+    # We use a late import or direct check of config to avoid circular imports
+    from E1.core import config
+    if getattr(config, 'WEIGHTS_MODE', None) == "frozen":
+        if "experimental" in path.lower():
+            raise RuntimeError(f"GOVERNANCE VIOLATION: WEIGHTS_MODE is 'frozen' but path is {path}. Aborting.")
+
     # --- Case 1: Load from JSON (Primary Source of Truth for Scorer) ---
     if path.lower().endswith('.json'):
         with open(path, 'r') as f:
@@ -256,18 +260,7 @@ def compute_votes(row, breadth_pct=0.6, sma200_floor=0.25):
     s50 = row.get('sma_50')
     s200 = row.get('sma_200')
 
-    # S1: MA Crossover
-    if _all_valid(close, s20, s50, s200):
-        if close > s20 > s50 > s200:
-            votes['sig_ma_crossover'] = 1.0
-        elif close > s50 > s200:
-            votes['sig_ma_crossover'] = 0.6
-        elif close > s200:
-            votes['sig_ma_crossover'] = 0.2
-        else:
-            votes['sig_ma_crossover'] = -1.0
-    else:
-        votes['sig_ma_crossover'] = 0.0
+    # S1: MA Crossover (Retired in Phase 5 - Zero Weight)
 
     # S2: 3-Month RS
     rs = row.get('rs_vs_spy_63d')
@@ -275,21 +268,6 @@ def compute_votes(row, breadth_pct=0.6, sma200_floor=0.25):
         votes['sig_rs_3month'] = float(np.clip(rs / 12.0, -1.0, 1.0))
     else:
         votes['sig_rs_3month'] = 0.0
-
-    # S3: Sector Momentum
-    rank = row.get('sector_rank')
-    if pd.notna(rank):
-        rank = int(rank)
-        if rank <= 2:
-            votes['sig_sector_momentum'] = 1.0
-        elif rank <= 5:
-            votes['sig_sector_momentum'] = 0.5
-        elif rank <= 8:
-            votes['sig_sector_momentum'] = 0.0
-        else:
-            votes['sig_sector_momentum'] = -0.5
-    else:
-        votes['sig_sector_momentum'] = 0.0
 
     # S4: MA Slope
     slope = row.get('ma_slope_pct')
@@ -333,6 +311,10 @@ def compute_votes(row, breadth_pct=0.6, sma200_floor=0.25):
         votes['sig_drawdown_recovery'] = 0.0
 
     # S7: PEAD
+    # Fix A (2026-05-15): When PEAD window is stale (days > 60) or no earnings data,
+    # abstain (None) rather than vote 0.0. A 0.0 vote with 50% weight compresses the
+    # ensemble score of non-PEAD names; None drops sig_fundamental from the active_weight
+    # denominator entirely, making the remaining signals carry 100% of the weight.
     surprise = row.get('eps_surprise')
     days = row.get('days_since_earnings')
     if pd.notna(surprise) and surprise != 0.0:
@@ -341,20 +323,11 @@ def compute_votes(row, breadth_pct=0.6, sma200_floor=0.25):
             raw = surprise * decay * 10
             votes['sig_fundamental'] = float(np.clip(raw, -1.0, 1.0))
         else:
-            votes['sig_fundamental'] = 0.0
+            votes['sig_fundamental'] = None  # Stale: abstain, not zero
     else:
-        votes['sig_fundamental'] = 0.0
+        votes['sig_fundamental'] = None  # No data: abstain, not zero
 
-    # S8: Earnings Acceleration (Revision Momentum)
-    revision_pct = row.get('eps_estimate_30d_change')
-    days_to_earn = row.get('days_to_earnings')
-
-    if pd.notna(revision_pct) and pd.notna(days_to_earn) and 0 <= days_to_earn <= 60:
-        decay = 1.0 - (days_to_earn / 60.0)
-        raw = (revision_pct / 100.0) * decay * 8.0
-        votes['sig_earnings_acceleration'] = float(np.clip(raw, -1.0, 1.0))
-    else:
-        votes['sig_earnings_acceleration'] = 0.0
+    # S8: Earnings Acceleration (Retired in Phase 5 - Zero Weight)
 
     return votes
 
