@@ -1,9 +1,9 @@
 # Strategy E1: Unified Specification
 **Single Source of Truth (SSOT)**
 
-**Date**: May 10, 2026
+**Date**: May 16, 2026
 **Status**: **PRODUCTION / LIVE**
-**Version**: V1.5 (Pillar 7 Hardened)
+**Version**: V1.7 (Phase 5 Weights & Forensic Hardening)
 
 ## 1. Strategy Identity & DNA
 **"Strategy E1 is a volatility-resilient breakout capture engine. It is structurally anti-fragile and utilizes a multi-layer ensemble to identify high-quality momentum. Phase 2 (Hardening) introduces the Pillar 7 CTE engine to dynamically scale risk based on the specific market context at entry (VIX velocity and Regime Age)."**
@@ -66,6 +66,7 @@ To maintain a clean CTE training set, exits are categorized by **Structured Trig
 ## 5. Shadow Rule Governance & Data Integrity
 - **Piotroski PIT Rule**: All fundamental queries MUST filter `fetched_at <= sim_date` (Strict window). Look-ahead bias (+7 day) is prohibited.
 - **Low Confidence Veto**: Piotroski scores derived from mismatched sources (TTM CFO vs Quarterly NI) or thin data (< 7/9 points) are marked `LOW_CONFIDENCE` and treated as non-authoritative for hard vetoes.
+- **Abstain-on-Stale (Fix A)**: S7 (PEAD Fundamental) signal must strictly abstain (`None`) if data is missing or stale (> 60 days). The ensemble scorer must exclude abstaining signals from the active-weight denominator to prevent artificial score suppression in growth names between earnings prints.
 - **Atomic Entry**: DB Insert -> Broker Submission -> Compensating Delete (on failure).
 - **Zero-Price Guard**: Lifecycle engine skips $0.00 quotes to prevent data-gap liquidations.
 
@@ -75,6 +76,7 @@ To maintain a clean CTE training set, exits are categorized by **Structured Trig
 | Benchmark | Sharpe | CAGR |
 | :--- | :---: | :---: |
 | **Audit Gold (2014-2026)** | 1.13 | 18.1% |
+| **Phase 5 Final Audit (2014-2025)** | **N/A** | **9.17% (Max DD: -13.44%)** |
 | **Live Gate (60 Session)** | **>= 0.85** | - |
 
 ---
@@ -99,4 +101,20 @@ On trading day 20, a position is eligible for a **15-day extension** if and only
 - **Extension Stop-Loss**: Trailing multiplier is widened to **2.5x ATR** (Ratchet-Only) to provide "breathing room" for the momentum run while protecting the majority of the profit.
 - **Defensive Precedence**: All defensive exits (`REGIME_EXIT`, `ALMANAC_EXIT`, `SCORE_DECAY`) take precedence and will terminate the extension immediately if triggered.
 
-**End of Specification V1.6**
+## 8. Strategy E1 Phase 5: Technical Signal Expansion
+The Phase 5 expansion (implemented May 2026) hardens the technical ensemble by integrating five additional momentum and confirmation signals.
+
+### 8.1 Signal Inventory (The "New 5")
+- **S_A (sig_rs_12month)**: 12-month Relative Strength vs SPY (Skip-1-Month).
+- **S_B (sig_rs_6month)**: 6-month Relative Strength vs SPY (Skip-1-Month).
+- **S_C (sig_price_stage)**: Minervini-style Trend Structure (Close > 50 > 150 > 200).
+- **S_D (sig_52w_high)**: Proximity to 52-week High (using high_252d/low_252d range).
+- **S_E (sig_volume)**: Volume Confirmation (21d avg volume vs 63d avg volume).
+
+### 8.2 Data Requirements & Abstention Rules
+- **Lookback Integrity**: `sig_rs_12month` requires strictly **252 days** of price history. Tickers with fewer than 252 days MUST abstain (`None`). No interpolation or partial lookbacks are permitted.
+- **Expected Gaps**: A 1–2% coverage gap in `sig_rs_12month` (relative to `sig_rs_6month`) is expected and identifies recent IPOs or index additions. This is a design feature to ensure momentum is measured only against mature price structures.
+- **Status**: **ACTIVE (V1.7)**. The Phase 5 signals have successfully cleared the 12-year Forensic Audit. Production weights have been updated and are strictly enforced via `WEIGHTS_MODE = "frozen"`.
+
+**End of Specification V1.7**
+
