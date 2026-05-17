@@ -101,7 +101,7 @@ class MockAlpacaClient:
     def __init__(self, conn, sim_date: date, initial_cash: float = 50_000.0,
                  sim_run_id: str = None, inject_scenario: str = None):
         self._conn = conn
-        self._sim_date = sim_date
+        self.sim_date = sim_date
         self._sim_run_id = sim_run_id or str(uuid.uuid4())[:8]
         self._inject_scenario = inject_scenario  # e.g. 'oco-failure', 'zero-price-guard'
         self._initial_cash = initial_cash
@@ -112,8 +112,18 @@ class MockAlpacaClient:
         self._cache_date = None
 
         current_cash = self._get_cash()
-        logger.info(f"[MOCK] MockAlpacaClient initialized | sim_date={sim_date} | "
+        logger.info(f"[MOCK] MockAlpacaClient initialized | sim_date={self.sim_date} | "
                     f"cash=${current_cash:,.2f} | run={self._sim_run_id} | inject={inject_scenario}")
+
+    @property
+    def sim_date(self):
+        return self._sim_date
+
+    @sim_date.setter
+    def sim_date(self, value):
+        self._sim_date = value
+        # Reset cache date to force a fresh quote pull for the new day
+        self._cache_date = None
 
     # -------------------------------------------------------------------------
     # ACCOUNT

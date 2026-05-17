@@ -28,13 +28,19 @@ CANONICAL_SIGNALS = [
     'sig_rsi_oversold',
     'sig_drawdown_recovery',
     'sig_fundamental',
+    # Phase 5 (new)
+    'sig_rs_12month',
+    'sig_rs_6month',
+    'sig_price_stage',
+    'sig_52w_high',
+    'sig_volume',
 ]
 
 # Cluster definitions
 CLUSTERS = {
-    'trend':          ['sig_rs_3month', 'sig_ma_slope'],
+    'trend':          ['sig_rs_3month', 'sig_ma_slope', 'sig_rs_12month', 'sig_rs_6month', 'sig_price_stage'],
     'mean_reversion': ['sig_rsi_oversold', 'sig_drawdown_recovery'],
-    'quality':        ['sig_fundamental'],
+    'quality':        ['sig_fundamental', 'sig_52w_high', 'sig_volume'],
 }
 
 # Legacy CSV name mapping
@@ -257,8 +263,8 @@ def compute_votes(row, breadth_pct=0.6, sma200_floor=0.25):
 
     close = row.get('close_price')
     s20 = row.get('sma_20')
-    s50 = row.get('sma_50')
-    s200 = row.get('sma_200')
+    s50 = row.get('ma_50')
+    s200 = row.get('ma_200')
 
     # S1: MA Crossover (Retired in Phase 5 - Zero Weight)
 
@@ -328,6 +334,63 @@ def compute_votes(row, breadth_pct=0.6, sma200_floor=0.25):
         votes['sig_fundamental'] = None  # No data: abstain, not zero
 
     # S8: Earnings Acceleration (Retired in Phase 5 - Zero Weight)
+
+    # ── Phase 5: New Signals ──────────────────────────────────────────
+
+    # S_A: 12-Month Relative Strength vs SPY (Skip Last Month)
+    rs_12m = row.get('rs_vs_spy_252d_skip1m')
+    if pd.notna(rs_12m):
+        votes['sig_rs_12month'] = float(np.clip(rs_12m / 0.60, -1.0, 1.0))
+    else:
+        votes['sig_rs_12month'] = None
+
+    # S_B: 6-Month Relative Strength vs SPY (Skip Last Month)
+    rs_6m = row.get('rs_vs_spy_126d_skip1m')
+    if pd.notna(rs_6m):
+        votes['sig_rs_6month'] = float(np.clip(rs_6m / 0.40, -1.0, 1.0))
+    else:
+        votes['sig_rs_6month'] = None
+
+    # S_C: Price Stage (Minervini trend structure)
+    # Using Phase 5 ma_50/150/200 columns (SSOT from daily_signals_ml)
+    ma50  = row.get('ma_50')
+    ma150 = row.get('ma_150')
+    ma200 = row.get('ma_200')
+    if _all_valid(close, ma50, ma150, ma200):
+        conditions = [
+            close > ma50,
+            close > ma150,
+            close > ma200,
+            ma50  > ma150,
+            ma150 > ma200,
+        ]
+        stage_score = sum(conditions)  # 0 to 5
+        votes['sig_price_stage'] = float((stage_score / 5.0) * 2 - 1)
+    else:
+        votes['sig_price_stage'] = None
+
+    # S_D: 52-Week High Proximity (Using high_252d/low_252d)
+    high_252d = row.get('high_252d')
+    low_252d  = row.get('low_252d')
+    if _all_valid(close, high_252d, low_252d):
+        range_52w = high_252d - low_252d
+        if range_52w > 0:
+            proximity = (close - low_252d) / range_52w
+            votes['sig_52w_high'] = float((proximity * 2) - 1)
+        else:
+            votes['sig_52w_high'] = None
+    else:
+        votes['sig_52w_high'] = None
+
+    # S_E: Volume Confirmation (Trend Confirmation)
+    vol_21d = row.get('avg_volume_21d')
+    vol_63d = row.get('avg_volume_63d')
+    if _all_valid(vol_21d, vol_63d) and vol_63d > 0:
+        vol_ratio_val = vol_21d / vol_63d
+        # Normalize: ratio of 2.0+ is +1.0 vote
+        votes['sig_volume'] = float(np.clip((vol_ratio_val - 1.0) / 1.0, -1.0, 1.0))
+    else:
+        votes['sig_volume'] = None
 
     return votes
 
@@ -476,12 +539,20 @@ if __name__ == '__main__':
         'volume': 1500000, 'vol_20d_avg': 1000000, 'rsi_14': 35, 'drawdown_52w': -0.15,
         'eps_surprise': 0.1, 'days_since_earnings': 10,
         'final_sentiment_factor': 0.3, 'eps_estimate_30d_change': 0.05,
+        # Phase 5 columns
+        'rs_vs_spy_252d_skip1m': 0.15, 'rs_vs_spy_126d_skip1m': 0.08,
+        'ma_50': 145, 'ma_150': 138, 'ma_200': 130,
+        'high_252d': 160, 'low_252d': 110,
+        'avg_volume_21d': 1200000, 'avg_volume_63d': 1000000,
     }
 
     votes = compute_votes(test_row, breadth_pct=0.8)
     print(f"\nVotes (same across all regimes):")
     for k, v in sorted(votes.items()):
-        print(f"  {k:35s} = {v:+.4f}")
+        if v is not None:
+            print(f"  {k:35s} = {v:+.4f}")
+        else:
+            print(f"  {k:35s} = None (abstain)")
 
     for regime in ['HEALTHY', 'FRAGILE', 'BEAR']:
         test_row['regime'] = regime

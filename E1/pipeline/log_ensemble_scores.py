@@ -14,6 +14,7 @@ import duckdb
 import pandas as pd
 import os
 import sys
+import datetime
 from E1.core.config import DB_PATH
 
 sys.path.insert(0, os.getcwd())
@@ -48,6 +49,11 @@ CREATE TABLE IF NOT EXISTS refined.ensemble_daily_scores (
     sig_rsi_oversold DOUBLE,
     sig_drawdown_recovery DOUBLE,
     sig_fundamental DOUBLE,
+    sig_rs_12month DOUBLE,
+    sig_rs_6month DOUBLE,
+    sig_price_stage DOUBLE,
+    sig_52w_high DOUBLE,
+    sig_volume DOUBLE,
     close_price DOUBLE,
     drawdown_52w DOUBLE,
     piotroski_f_score INTEGER,
@@ -70,6 +76,11 @@ _NEW_COLUMNS = [
     ("rationale", "VARCHAR"),
     ("dominant_cluster", "VARCHAR"),
     ("cluster_dominance_pct", "DOUBLE"),
+    ("sig_rs_12month", "DOUBLE"),
+    ("sig_rs_6month", "DOUBLE"),
+    ("sig_price_stage", "DOUBLE"),
+    ("sig_52w_high", "DOUBLE"),
+    ("sig_volume", "DOUBLE"),
 ]
 
 def _ensure_columns(con):
@@ -141,8 +152,7 @@ def _generate_rationale(row, votes, score, regime, pio_score):
         return f"Degrading Trend {desc}"
     else:
         return f"Neutral {desc}"
-
-def run(target_date=None, con=None, cached_weights=None):
+def run(target_date=None, con=None, cached_weights=None, **kwargs):
     external_con = con is not None
     if not external_con:
         con = duckdb.connect(DB_PATH)
@@ -156,21 +166,28 @@ def run(target_date=None, con=None, cached_weights=None):
 
     rw = cached_weights if cached_weights is not None else load_regime_weights(WEIGHTS_JSON_PATH)
 
-    existing = con.execute("SELECT COUNT(*) FROM refined.ensemble_daily_scores WHERE date = ?", [target_date]).fetchone()[0]
-    if existing > 0:
-        con.execute("DELETE FROM refined.ensemble_daily_scores WHERE date = ?", [target_date])
+    # Optimization: Allow passing pre-cached maps
+    pio_map = kwargs.get('pio_map')
+    if pio_map is None:
+        # For historical rebuilds, we often skip this or use a dummy to avoid 2000+ queries
+        pio_map = {}
+        
+    analyst_map = kwargs.get('analyst_map')
+    if analyst_map is None:
+        analyst_df = con.execute("""
+            SELECT ticker, short_percent_of_float
+            FROM yahoo.analyst_data
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fetched_at DESC) = 1
+        """).df()
+        analyst_map = dict(zip(analyst_df['ticker'], analyst_df['short_percent_of_float']))
+
+    con.execute("DELETE FROM refined.ensemble_daily_scores WHERE date = ?", [target_date])
 
     df = con.execute("""
         SELECT 
             s.*,
-            y.short_percent_of_float,
             ns.final_sentiment_factor
         FROM refined.daily_signals_ml s
-        LEFT JOIN (
-            SELECT ticker, short_percent_of_float
-            FROM yahoo.analyst_data
-            QUALIFY ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fetched_at DESC) = 1
-        ) y ON s.ticker = y.ticker
         LEFT JOIN (
             SELECT ticker, final_sentiment_factor
             FROM refined.daily_sentiment
@@ -185,9 +202,11 @@ def run(target_date=None, con=None, cached_weights=None):
         if not external_con: con.close()
         return
 
-    pio_map = _load_piotroski_map(con, target_date)
-    regime_row = con.execute("SELECT regime FROM refined.market_regime WHERE date = ?", [target_date]).fetchone()
-    live_regime = regime_row[0] if (regime_row and regime_row[0]) else None
+    # Regime override
+    live_regime = kwargs.get('live_regime_override')
+    if live_regime is None:
+        regime_row = con.execute("SELECT regime FROM refined.market_regime WHERE date = ?", [target_date]).fetchone()
+        live_regime = regime_row[0] if (regime_row and regime_row[0]) else None
 
     results = []
     bear_dd_threshold = getattr(config, 'BEAR_DRAWDOWN_VETO', -0.65)
@@ -211,7 +230,7 @@ def run(target_date=None, con=None, cached_weights=None):
         ticker = r['ticker']
         drawdown = r.get('drawdown_52w')
         pio_score = pio_map.get(ticker)
-        short_float = r.get('short_percent_of_float')
+        short_float = analyst_map.get(ticker)
 
         short_float_veto = False
         if short_float is not None and short_float > 0.15:
@@ -240,11 +259,16 @@ def run(target_date=None, con=None, cached_weights=None):
         results.append({
             'date': r['date'], 'ticker': ticker, 'sector': r.get('sector'),
             'regime': regime, 'weights_regime': weights_regime, 'ensemble_score': round(score, 4),
-            'sig_rs_3month': round(votes.get('sig_rs_3month', 0), 4),
-            'sig_ma_slope': round(votes.get('sig_ma_slope', 0), 4),
-            'sig_rsi_oversold': round(votes.get('sig_rsi_oversold', 0), 4),
-            'sig_drawdown_recovery': round(votes.get('sig_drawdown_recovery', 0), 4),
+            'sig_rs_3month': round(votes.get('sig_rs_3month', 0), 4) if votes.get('sig_rs_3month') is not None else None,
+            'sig_ma_slope': round(votes.get('sig_ma_slope', 0), 4) if votes.get('sig_ma_slope') is not None else None,
+            'sig_rsi_oversold': round(votes.get('sig_rsi_oversold', 0), 4) if votes.get('sig_rsi_oversold') is not None else None,
+            'sig_drawdown_recovery': round(votes.get('sig_drawdown_recovery', 0), 4) if votes.get('sig_drawdown_recovery') is not None else None,
             'sig_fundamental': votes.get('sig_fundamental'),
+            'sig_rs_12month': round(votes.get('sig_rs_12month', 0), 4) if votes.get('sig_rs_12month') is not None else None,
+            'sig_rs_6month': round(votes.get('sig_rs_6month', 0), 4) if votes.get('sig_rs_6month') is not None else None,
+            'sig_price_stage': round(votes.get('sig_price_stage', 0), 4) if votes.get('sig_price_stage') is not None else None,
+            'sig_52w_high': round(votes.get('sig_52w_high', 0), 4) if votes.get('sig_52w_high') is not None else None,
+            'sig_volume': round(votes.get('sig_volume', 0), 4) if votes.get('sig_volume') is not None else None,
             'close_price': r.get('close_price'), 'drawdown_52w': drawdown,
             'piotroski_f_score': pio_score, 'short_float_pct': short_float,
             'bear_dd_veto': bear_dd_veto, 'bear_pio_veto': bear_pio_veto,
@@ -258,6 +282,7 @@ def run(target_date=None, con=None, cached_weights=None):
             "date", "ticker", "sector", "regime", "weights_regime", "ensemble_score",
             "sig_rs_3month", "sig_ma_slope",
             "sig_rsi_oversold", "sig_drawdown_recovery", "sig_fundamental",
+            "sig_rs_12month", "sig_rs_6month", "sig_price_stage", "sig_52w_high", "sig_volume",
             "close_price", "drawdown_52w", "piotroski_f_score", "short_float_pct",
             "bear_dd_veto", "bear_pio_veto", "rationale", "dominant_cluster", "cluster_dominance_pct"
         ]
@@ -266,24 +291,60 @@ def run(target_date=None, con=None, cached_weights=None):
     
     if not external_con:
         con.close()
-        print(f"  Done {target_date}.")
+        print(f"  Done {target_date}.", flush=True)
 
 def rebuild_all(start_date=None, end_date=None):
     con = duckdb.connect(DB_PATH)
     con.execute("CREATE SCHEMA IF NOT EXISTS refined")
     con.execute(CREATE_TABLE_SQL)
     _ensure_columns(con)
+    
     query = "SELECT DISTINCT date FROM refined.daily_signals_ml"
+    conditions = []
     params = []
     if start_date:
-        query += " WHERE date >= ?"
+        conditions.append("date >= ?")
         params.append(start_date)
+    if end_date:
+        conditions.append("date <= ?")
+        params.append(end_date)
+    
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    
     query += " ORDER BY date"
-    dates = con.execute(query, params).df()
+    dates_df = con.execute(query, params).df()
+    dates = dates_df['date'].tolist()
+    print(f"Starting Optimized Rebuild: {start_date or 'BEGINNING'} to {end_date or 'LATEST'} ({len(dates)} dates)", flush=True)
+    
     rw = load_regime_weights(WEIGHTS_JSON_PATH)
-    for d in dates['date']:
-        run(d, con=con, cached_weights=rw)
+    
+    print("Pre-caching market regimes...", flush=True)
+    regimes = con.execute("SELECT date, regime FROM refined.market_regime").df()
+    regime_map = dict(zip(regimes['date'], regimes['regime']))
+    
+    print("Pre-caching analyst data...", flush=True)
+    analyst_df = con.execute("""
+        SELECT ticker, short_percent_of_float
+        FROM yahoo.analyst_data
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fetched_at DESC) = 1
+    """).df()
+    analyst_map = dict(zip(analyst_df['ticker'], analyst_df['short_percent_of_float']))
+    
+    # We skip the global pio_map pre-cache as it's too slow. 
+    # run() will fetch its own if not provided, or we can provide a dummy for rebuild.
+    # For Phase 5 IC study, we only need the signals, the vetoes (Piotroski) are secondary.
+    
+    for i, d in enumerate(dates):
+        # Pass regime from map to avoid query in run()
+        live_regime = regime_map.get(d)
+        run(d, con=con, cached_weights=rw, analyst_map=analyst_map, live_regime_override=live_regime)
+        
+        if (i + 1) % 50 == 0 or (i + 1) == len(dates):
+            print(f"  Progress: {i+1}/{len(dates)} dates completed.", flush=True)
+
     con.close()
+    print("Rebuild Complete.", flush=True)
 
 if __name__ == "__main__":
     import argparse
@@ -291,8 +352,9 @@ if __name__ == "__main__":
     parser.add_argument('--date', type=str)
     parser.add_argument('--rebuild', action='store_true')
     parser.add_argument('--start', type=str)
+    parser.add_argument('--end', type=str)
     args = parser.parse_args()
     if args.rebuild:
-        rebuild_all(start_date=args.start)
+        rebuild_all(start_date=args.start, end_date=args.end)
     else:
         run(args.date)

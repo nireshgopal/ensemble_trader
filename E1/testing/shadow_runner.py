@@ -226,7 +226,15 @@ class DuckDBProxy:
     """Wraps DuckDB connection to intercept and patch queries on the fly."""
     def __init__(self, conn, sim_date):
         self._conn = conn
-        self._sim_date = sim_date
+        self.sim_date = sim_date
+        
+    @property
+    def sim_date(self):
+        return self._sim_date
+        
+    @sim_date.setter
+    def sim_date(self, value):
+        self._sim_date = value
         
     def execute(self, query, parameters=None, **kwargs):
         if isinstance(query, str) and "refined.latest_short_float" in query:
@@ -573,10 +581,24 @@ def run_shadow(start: date, end: date, inject_scenario: Optional[str] = None,
     # -------------------------------------------------------------------------
     # MAIN DAY LOOP
     # -------------------------------------------------------------------------
+    # Build stateful mock client once before the loop
+    proxy_conn = DuckDBProxy(conn, trading_days[0])
+    mock = MockAlpacaClient(
+        conn=proxy_conn,
+        sim_date=trading_days[0],
+        initial_cash=INITIAL_CAPITAL,
+        sim_run_id=sim_run_id,
+        inject_scenario=inject_scenario,
+    )
+
     for i, sim_date in enumerate(trading_days):
         logger.info(f"\n{'─'*55}")
         logger.info(f"  [{i+1}/{len(trading_days)}] SHADOW DATE: {sim_date}")
         logger.info(f"{'─'*55}")
+
+        # Advance state to today
+        proxy_conn.sim_date = sim_date
+        mock.sim_date = sim_date
 
         # Patch Piotroski with today's sim_date for point-in-time F-Score
         set_piotroski_sim_date(sim_date, strict=True)
@@ -584,19 +606,8 @@ def run_shadow(start: date, end: date, inject_scenario: Optional[str] = None,
         # Patch Telegram with sim prefix
         patch_telegram(sim_date)
 
-        # OPTIMIZATION: Wrap connection in proxy to inject PIT subqueries
-        # bypassing expensive DDL View creation.
+        # OPTIMIZATION: Setup temporary short float table for today
         setup_sim_short_float(conn, sim_date)
-        proxy_conn = DuckDBProxy(conn, sim_date)
-
-        # Build stateful mock client for this day
-        mock = MockAlpacaClient(
-            conn=proxy_conn,
-            sim_date=sim_date,
-            initial_cash=INITIAL_CAPITAL,
-            sim_run_id=sim_run_id,
-            inject_scenario=inject_scenario,
-        )
 
         # Fetch regime for equity curve snapshot
         regime_row = proxy_conn.execute("""

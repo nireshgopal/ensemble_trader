@@ -166,7 +166,9 @@ V4_OCF_NEGATIVE_PENALTY = 0
 # The dynamic weighting system. Uses signal_weights.json for scoring.
 # ==============================================================================
 
-SIGNAL_WEIGHTS_PATH = "docs/signal_weights.json"
+SIGNAL_WEIGHTS_PATH = "docs/signal_weights_CANDIDATE.json"
+WEIGHTS_MODE = "frozen"        # GOVERNANCE: 'frozen' or 'experimental'
+
 MAX_POSITION_PCT_E1 = 0.15    # 15% max single position (E1 standard)
 E1_CASH_FLOOR = 0.15          # Core cash floor for E1 engine
 ENABLE_BETA_SWEEPER = False   # Master flag for L3 Beta Sweeper (Experimental)

@@ -16,13 +16,18 @@ SIGNALS = [
     'sig_rsi_oversold',
     'sig_drawdown_recovery',
     'sig_fundamental',
+    'sig_rs_12month',
+    'sig_rs_6month',
+    'sig_price_stage',
+    'sig_52w_high',
+    'sig_volume',
 ]
-HORIZONS = [5, 10, 20, 40]
+HORIZONS = [5, 10, 20, 25, 40]
 
 CLUSTERS = {
-    'trend':          ['sig_rs_3month', 'sig_ma_slope'],
+    'trend':          ['sig_rs_3month', 'sig_ma_slope', 'sig_rs_12month', 'sig_rs_6month', 'sig_price_stage'],
     'mean_reversion': ['sig_rsi_oversold', 'sig_drawdown_recovery'],
-    'quality':        ['sig_fundamental'],
+    'quality':        ['sig_fundamental', 'sig_52w_high', 'sig_volume'],
 }
 
 def _compute_ic_metrics(df, signals, horizons):
@@ -67,17 +72,17 @@ def _compute_ic_metrics(df, signals, horizons):
             print(f"  WARNING: Regime {regime} has {len(rdf)} rows (< 100) — skipping")
             continue
         for sig in signals:
-            sub = rdf[['fwd_return_20d', sig]].dropna()
+            sub = rdf[['fwd_return_25d', sig]].dropna()
             if len(sub) < 100:
                 continue
-            ic, pval = spearmanr(sub[sig], sub['fwd_return_20d'])
+            ic, pval = spearmanr(sub[sig], sub['fwd_return_25d'])
             gate = 'PASS' if (ic > 0.01 and pval < 0.05) else 'FAIL'
             results.append({
                 'signal': sig,
                 'regime': regime,
                 'ic': round(ic, 6),
                 'pval': round(pval, 6),
-                'best_horizon_days': 20,
+                'best_horizon_days': 25,
                 'n': len(sub),
                 'gate': gate
             })
@@ -133,7 +138,12 @@ def run_ic_computation():
             e.sig_ma_slope,
             e.sig_rsi_oversold,
             e.sig_drawdown_recovery,
-            e.sig_fundamental
+            e.sig_fundamental,
+            e.sig_rs_12month,
+            e.sig_rs_6month,
+            e.sig_price_stage,
+            e.sig_52w_high,
+            e.sig_volume
         FROM refined.ensemble_daily_scores e
         WHERE e.close_price IS NOT NULL
           AND e.close_price > 1.0
@@ -145,7 +155,7 @@ def run_ic_computation():
     for h in HORIZONS:
         df[f'fwd_return_{h}d'] = df.groupby('ticker')['close_price'].shift(-h) / df['close_price'] - 1
 
-    df_full = df.dropna(subset=['fwd_return_20d'])
+    df_full = df.dropna(subset=['fwd_return_25d'])
     
     # --- FULL HISTORY IC ---
     results_full = _compute_ic_metrics(df_full, SIGNALS, HORIZONS)

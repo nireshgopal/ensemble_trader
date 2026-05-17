@@ -371,6 +371,15 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
                     conn.close()
                     return
         
+        # --- GOVERNANCE INTERLOCK: Weights Mode Check ---
+        if config.WEIGHTS_MODE == "frozen":
+            if "experimental" in WEIGHTS_JSON_PATH.lower():
+                logger.error(f"GOVERNANCE VIOLATION: WEIGHTS_MODE is 'frozen' but path is {WEIGHTS_JSON_PATH}. Aborting.")
+                if _conn is None:
+                    conn.close()
+                return
+            logger.info("Governance Interlock: Production weights verified (Mode: FROZEN)")
+        
         # Multi-run support enabled.
     
     # --- REAL-TIME SYNC HARDENING: Sync Database to Alpaca Truth ---
@@ -521,6 +530,8 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
             e.sig_ma_slope,
             e.sig_rsi_oversold,
             e.sig_fundamental,
+            e.sig_rs_12month,
+            e.sig_drawdown_recovery,
             a.short_percent_of_float,
             s.vol_20d_avg as volume,
             COALESCE(ph.high, s.close_price) as high
@@ -781,13 +792,17 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
                 new_mult = eval_result.get('new_trail_mult')
                 logger.info(f"  [{ticker}] TRAILING UPDATE: stop -> ${new_stop:.2f}")
                 if not simulate and p_id is not None:
+                    # V1.6 FIX: Only promote to 'TRAILING' if a multiplier is explicitly provided (e.g. 2.5x extension)
+                    # or if the position was already in 'TRAILING' stage.
+                    target_stage = 'TRAILING' if (new_mult or pos.get('stop_stage') == 'TRAILING') else pos.get('stop_stage', 'BREAKEVEN')
+                    
                     update_sql = f"""
                         UPDATE {config.E1_POSITIONS_TABLE} 
-                        SET stop_stage = 'TRAILING', trailing_stop = ?, stop_loss = ?,
+                        SET stop_stage = ?, trailing_stop = ?, stop_loss = ?,
                             highest_close_since_t1 = ?,
                             updated_at = CURRENT_TIMESTAMP
                     """
-                    params = [new_stop, new_stop, mdata_dict['highest_close']]
+                    params = [target_stage, new_stop, new_stop, mdata_dict['highest_close']]
                     if new_mult:
                         update_sql += f", trailing_mult_override = ?"
                         params.append(new_mult)
@@ -820,7 +835,7 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
                 conn.execute(f"""
                     INSERT INTO {config.E1_TRADE_LOG_TABLE} (trade_date, ticker, action, trigger, pnl_pct, reason, sim_run_id)
                     VALUES (?, ?, 'EXTEND_HOLD', 'HEALTHY_BULL_EXT', ?, ?, ?)
-                """, [today_str, ticker, mdata_dict['pnl_pct'], eval_result.get('reason', ''), run_id])
+                """, [today_str, ticker, mdata_dict['pnl_pct'], eval_result.get('reason', ''), sim_run_id])
                     
                 if not simulate and p_id is None:
                     logger.warning(f"  [WARN] {ticker} skipped DB update for EXTEND_HOLD due to NULL id")
@@ -1034,6 +1049,26 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
             if cash_available <= min_cash_required:
                 logger.info(f"Cash reserve floor reached (${min_cash_required:,.0f}). Stopping scan.")
                 break
+
+            # --- PHASE 5: RS12m Tiered Entry Gate (HEALTHY ONLY) ---
+            if current_regime == 'HEALTHY':
+                rs12 = row.get('sig_rs_12month')
+                if rs12 is not None:
+                    if rs12 < 0.70:
+                        logger.info(f"  [{ticker}] VETO: RS12m {rs12:.2f} < 0.70 Floor.")
+                        continue
+                    elif rs12 < 0.72:
+                        logger.info(f"  [{ticker}] TIERED GATE: RS12m {rs12:.2f} (Tier 3). Penalty -0.06 applied.")
+                        row['ensemble_score'] -= 0.06
+                    elif rs12 < 0.76:
+                        logger.info(f"  [{ticker}] TIERED GATE: RS12m {rs12:.2f} (Tier 2). Penalty -0.03 applied.")
+                        row['ensemble_score'] -= 0.03
+                
+                # Re-check threshold after potential penalty
+                if row['ensemble_score'] < entry_threshold:
+                    logger.info(f"  [{ticker}] VETO: Adjusted Score {row['ensemble_score']:.4f} < {entry_threshold} threshold.")
+                    continue
+
             # --- V1.3 FIX: Live Quote & Gap-Up Veto ---
             prev_close = row.get('close_price')
             live_price = prev_close
@@ -1287,7 +1322,7 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
                 res = conn.execute(f"""
                 INSERT INTO {config.E1_POSITIONS_TABLE} (
                     ticker, status, entry_date, entry_price, shares, dollar_value, 
-                    ensemble_score, entry_score, entry_regime, dominant_cluster, cluster_dominance_pct, max_hold_days,
+                    ensemble_score, entry_score, entry_regime, regime_at_entry, dominant_cluster, cluster_dominance_pct, max_hold_days,
                     stop_loss, target_1, target_2, target_1_hit, score_scalar,
                     initial_stop, breakeven_trigger, stop_stage, t1_price, t2_price,
                     atr_at_entry, shares_total, shares_remaining,
@@ -1295,7 +1330,7 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
                     weights_version, sim_run_id, sim_date
                 ) VALUES (
                     ?, 'OPEN', ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, FALSE, ?,
                     ?, ?, 'INITIAL', ?, ?,
                     ?, ?, ?,
@@ -1304,7 +1339,7 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
                 ) RETURNING id
                 """, [
                     ticker, today_str, live_price, shares, dollar_val,
-                    row['ensemble_score'], row['ensemble_score'], current_regime, dominant_cluster, cluster_dominance_pct, max_hold_days,
+                    row['ensemble_score'], row['ensemble_score'], current_regime, current_regime, dominant_cluster, cluster_dominance_pct, max_hold_days,
                     stop_loss, target_1, target_2, size_res['score_scalar'],
                     initial_stop, breakeven_trigger, t1_target, t2_target,
                     atr_at_entry, shares, shares,
