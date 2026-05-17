@@ -1,97 +1,134 @@
 {
   "_metadata": {
-    "version": "v1.5_hardened_20260512",
-    "generated_at": "2026-05-12 00:00:00",
-    "source": "E1_SPECIFICATION.md + Phase1_Hardening_Plan",
-    "method": "IC-weighted with RSI/Drawdown injection into HEALTHY"
+    "version": "E1_V1.7_WEIGHTS",
+    "generated_at": "2026-05-16 11:34:31",
+    "source": "refined.ic_history",
+    "ic_snapshot_date": "2026-05-16",
+    "method": "cluster-budget + IC-proportional + dead-cluster redistribution"
   },
   "HEALTHY": {
-    "sig_fundamental": {
-      "weight": 0.50,
-      "direction": 1
-    },
     "sig_rs_3month": {
-      "weight": 0.22,
+      "weight": 0.1692,
       "direction": 1
     },
-    "sig_ma_slope": {
-      "weight": 0.18,
+    "sig_rs_6month": {
+      "weight": 0.1553,
       "direction": 1
     },
     "sig_rsi_oversold": {
-      "weight": 0.06,
+      "weight": 0.1754,
+      "direction": 1
+    },
+    "sig_fundamental": {
+      "weight": 0.5,
+      "direction": 1
+    },
+    "sig_ma_slope": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_rs_12month": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_price_stage": {
+      "weight": 0.0,
       "direction": 1
     },
     "sig_drawdown_recovery": {
-      "weight": 0.04,
+      "weight": 0.0,
       "direction": 1
     },
-    "sig_ma_crossover": {
-      "weight": 0.00,
+    "sig_52w_high": {
+      "weight": 0.0,
       "direction": 1
     },
-    "sig_sector_momentum": {
-      "weight": 0.00,
+    "sig_volume": {
+      "weight": 0.0,
       "direction": 1
     }
   },
   "FRAGILE": {
-    "sig_fundamental": {
-      "weight": 0.38,
-      "direction": 1
-    },
-    "sig_rsi_oversold": {
-      "weight": 0.35,
-      "direction": 1
-    },
-    "sig_drawdown_recovery": {
-      "weight": 0.27,
+    "sig_rs_3month": {
+      "weight": 0.0,
       "direction": 1
     },
     "sig_ma_slope": {
-      "weight": 0.00,
+      "weight": 0.0,
       "direction": 1
     },
-    "sig_ma_crossover": {
-      "weight": 0.00,
+    "sig_rs_12month": {
+      "weight": 0.0,
       "direction": 1
     },
-    "sig_rs_3month": {
-      "weight": 0.00,
+    "sig_rs_6month": {
+      "weight": 0.0,
       "direction": 1
     },
-    "sig_sector_momentum": {
-      "weight": 0.00,
+    "sig_price_stage": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_rsi_oversold": {
+      "weight": 0.5,
+      "direction": 1
+    },
+    "sig_fundamental": {
+      "weight": 0.5,
+      "direction": 1
+    },
+    "sig_drawdown_recovery": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_52w_high": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_volume": {
+      "weight": 0.0,
       "direction": 1
     }
   },
   "BEAR": {
-    "sig_fundamental": {
-      "weight": 0.38,
-      "direction": 1
-    },
-    "sig_rsi_oversold": {
-      "weight": 0.35,
-      "direction": 1
-    },
-    "sig_drawdown_recovery": {
-      "weight": 0.27,
-      "direction": 1
-    },
-    "sig_ma_crossover": {
-      "weight": 0.00,
-      "direction": 1
-    },
     "sig_rs_3month": {
-      "weight": 0.00,
-      "direction": 1
-    },
-    "sig_sector_momentum": {
-      "weight": 0.00,
+      "weight": 0.0,
       "direction": 1
     },
     "sig_ma_slope": {
-      "weight": 0.00,
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_rs_12month": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_rs_6month": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_price_stage": {
+      "weight": 0.0,
+      "direction": 1
+    },
+    "sig_rsi_oversold": {
+      "weight": 0.1658,
+      "direction": 1
+    },
+    "sig_drawdown_recovery": {
+      "weight": 0.1419,
+      "direction": 1
+    },
+    "sig_fundamental": {
+      "weight": 0.3631,
+      "direction": 1
+    },
+    "sig_volume": {
+      "weight": 0.3292,
+      "direction": 1
+    },
+    "sig_52w_high": {
+      "weight": 0.0,
       "direction": 1
     }
   }
