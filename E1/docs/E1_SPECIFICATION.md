@@ -3,7 +3,7 @@
 
 **Date**: May 16, 2026
 **Status**: **PRODUCTION / LIVE**
-**Version**: V1.7 (Phase 5 Weights & Forensic Hardening)
+**Version**: V1.7.1 (Decay Veto Reform)
 
 ## 1. Strategy Identity & DNA
 **"Strategy E1 is a volatility-resilient breakout capture engine. It is structurally anti-fragile and utilizes a multi-layer ensemble to identify high-quality momentum. Phase 2 (Hardening) introduces the Pillar 7 CTE engine to dynamically scale risk based on the specific market context at entry (VIX velocity and Regime Age)."**
@@ -17,7 +17,7 @@ Strategy E1 is a **Quality-First Ensemble** designed for 20-day alpha.
 - **The 20-Day Horizon**: Mandatory time exit using `refined.price_history` as the authoritative calendar.
 - **Circuit Breaker**: Regime-Gated ATR hard stop (6.0x/7.0x/8.0x).
 - **Breakeven Progression**: Stop advances to entry (+0.01) at +1.5x ATR.
-- **Decay Veto**: Exit if score drops 40% from baseline (reset on regime transition).
+- **Decay Veto**: Dynamic, regime-age-aware score decay veto (35% to 55% threshold) with a +5% "breathing room" release if core technical signals remain intact.
 - **Almanac Vetoes**: Entry (5d window) and Exit (2d window) safety guards.
 - **Gap-Up Veto**: No entry if live quote > 4.0% above prev close.
 - **Exhaustion Penalty**: Integrated RSI and Drawdown Recovery weights to penalize overextended setups.
@@ -46,6 +46,17 @@ CTE scales risk based on historical expectancy of the current "Cell":
 - **Regime Age**: Days since last regime transition (FRESH, ESTABLISHED, MATURE).
 - **Status**: Currently **DISABLED** (1.0x) for the 13-year audit to establish a raw baseline.
 - **Safety**: Hard cap of 1.75x on the combined scalar product (Conviction * CTE * S10).
+
+### 3.4 Context-Aware Decay Veto
+The Decay Veto protects the portfolio from structural signal roll-over. Rather than applying a flat 40% drop threshold, it utilizes a context-aware lookup based on current market regime and regime age:
+
+| Market Regime | Fresh (<30d) | Established (30d–89d) | Mature (>=90d) |
+| :--- | :---: | :---: | :---: |
+| **HEALTHY** | 55% threshold | 42% threshold | 35% threshold |
+| **FRAGILE** | 40% threshold | 35% threshold | 28% threshold |
+| **BEAR** | 38% threshold | 30% threshold | 25% threshold |
+
+* **Core Technical Release (Breathing Room)**: If core signals are intact (Minervini Stage 2 is confirmed and 12-month relative strength is positive), the exit threshold is widened by **+5%** to allow fresh breakouts to consolidate.
 
 ---
 

@@ -530,9 +530,24 @@ def run_shadow(start: date, end: date, inject_scenario: Optional[str] = None,
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    conn = duckdb.connect(DB_PATH)
+    sim_run_id = run_id if run_id else str(uuid.uuid4())[:12]
 
-    # Ensure sim schema exists
+    # Isolated local database copy to prevent lock contention with scheduled tasks
+    import shutil
+    sim_db_dir = PROJECT_ROOT / "scratch"
+    sim_db_dir.mkdir(exist_ok=True)
+    sim_db_path = sim_db_dir / f"findb_sim_{sim_run_id}.duckdb"
+    
+    logger.info(f"[SHADOW] Creating isolated local database copy at {sim_db_path}...")
+    shutil.copy2(DB_PATH, sim_db_path)
+    
+    # Override DB_PATH for config and connect to the local copy
+    original_db_path = config.DB_PATH
+    config.DB_PATH = str(sim_db_path)
+    
+    conn = duckdb.connect(str(sim_db_path))
+
+    # Ensure sim schema exists in the copy
     schema_sql = os.path.join(os.path.dirname(__file__), 'sim_schema.sql')
     with open(schema_sql, 'r') as f:
         for stmt in f.read().split(';'):
@@ -543,10 +558,6 @@ def run_shadow(start: date, end: date, inject_scenario: Optional[str] = None,
                 except Exception as e:
                     if 'already exists' not in str(e).lower():
                         logger.warning(f"Schema stmt warning: {e}")
-
-    sim_run_id = run_id if run_id else str(uuid.uuid4())[:12]
-
-    # [MODIFIED] reset logic removed for safety.
 
     # Override config to point at sim tables
     override_config_tables()
@@ -652,6 +663,65 @@ def run_shadow(start: date, end: date, inject_scenario: Optional[str] = None,
     generate_report(conn, sim_run_id, start, end)
     conn.close()
 
+    # Swiftly export sim reports back to the production database (sub-second write lock)
+    logger.info("[SHADOW] Exporting simulation results back to production database...")
+    try:
+        prod_conn = duckdb.connect(original_db_path)
+        
+        # Delete existing entries for this run_id to avoid duplication/binder unique errors
+        prod_conn.execute("DELETE FROM sandbox.e1_sim_run_manifest WHERE sim_run_id = ?", [sim_run_id])
+        prod_conn.execute("DELETE FROM sandbox.e1_sim_equity_curve WHERE sim_run_id = ?", [sim_run_id])
+        prod_conn.execute("DELETE FROM sandbox.e1_sim_trade_log WHERE sim_run_id = ?", [sim_run_id])
+        prod_conn.execute("DELETE FROM sandbox.e1_sim_positions WHERE sim_run_id = ?", [sim_run_id])
+        
+        # Temp connection to read from the copied DB again
+        temp_conn = duckdb.connect(str(sim_db_path), read_only=True)
+        
+        # Merge run manifest
+        manifest_rows = temp_conn.execute("SELECT * FROM sandbox.e1_sim_run_manifest WHERE sim_run_id = ?", [sim_run_id]).df()
+        if not manifest_rows.empty:
+            prod_conn.register('temp_manifest', manifest_rows)
+            prod_conn.execute("INSERT INTO sandbox.e1_sim_run_manifest SELECT * FROM temp_manifest")
+            prod_conn.unregister('temp_manifest')
+            
+        # Merge equity curve
+        equity_rows = temp_conn.execute("SELECT * FROM sandbox.e1_sim_equity_curve WHERE sim_run_id = ?", [sim_run_id]).df()
+        if not equity_rows.empty:
+            prod_conn.register('temp_equity', equity_rows)
+            prod_conn.execute("INSERT INTO sandbox.e1_sim_equity_curve SELECT * FROM temp_equity")
+            prod_conn.unregister('temp_equity')
+            
+        # Merge trade log
+        trade_rows = temp_conn.execute("SELECT * FROM sandbox.e1_sim_trade_log WHERE sim_run_id = ?", [sim_run_id]).df()
+        if not trade_rows.empty:
+            prod_conn.register('temp_trade', trade_rows)
+            prod_conn.execute("INSERT INTO sandbox.e1_sim_trade_log SELECT * FROM temp_trade")
+            prod_conn.unregister('temp_trade')
+
+        # Merge positions
+        pos_rows = temp_conn.execute("SELECT * FROM sandbox.e1_sim_positions WHERE sim_run_id = ?", [sim_run_id]).df()
+        if not pos_rows.empty:
+            prod_conn.register('temp_pos', pos_rows)
+            prod_conn.execute("INSERT INTO sandbox.e1_sim_positions SELECT * FROM temp_pos")
+            prod_conn.unregister('temp_pos')
+            
+        temp_conn.close()
+        prod_conn.close()
+        logger.info("[SHADOW] Successfully synchronized simulation records back to production.")
+    except Exception as e:
+        logger.error(f"[SHADOW] Failed to merge simulation results back to production: {e}")
+        
+    # Cleanup the temporary database file to avoid disk bloat
+    try:
+        if sim_db_path.exists():
+            os.remove(sim_db_path)
+            logger.info(f"[SHADOW] Cleaned up temporary database file {sim_db_path}.")
+    except Exception as e:
+        logger.warning(f"Could not clean up temporary database file: {e}")
+        
+    # Restore original database path
+    config.DB_PATH = original_db_path
+
 
 # =============================================================================
 # CLI ENTRY POINT
@@ -688,7 +758,7 @@ if __name__ == '__main__':
     if args.date:
         sim_date = date.fromisoformat(args.date)
         run_shadow(start=sim_date, end=sim_date,
-                   inject_scenario=args.inject, reset=args.reset, verbose=args.verbose, run_id=args.run_id)
+                   inject_scenario=args.inject, reset=False, verbose=args.verbose, run_id=args.run_id)
     else:
         start_dt = date.fromisoformat(args.start)
         end_dt = date.fromisoformat(args.end) if args.end else date.today()

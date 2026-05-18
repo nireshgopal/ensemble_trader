@@ -419,7 +419,7 @@ def compute_dominant_cluster(votes, weights):
         contrib = sum(
             abs(votes.get(sig, 0.0)) * weights.get(sig, 0.0)
             for sig in signals
-            if votes.get(sig) is not None
+            if votes.get(sig) is not None and not (isinstance(votes.get(sig), float) and np.isnan(votes.get(sig)))
         )
         display_name = display_map.get(cluster_key, cluster_key.capitalize())
         cluster_contributions[display_name] = contrib

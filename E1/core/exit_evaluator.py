@@ -8,8 +8,35 @@ Architecture:
 from datetime import date, datetime
 import logging
 import pandas as pd
+from E1.core import config
 
 logger = logging.getLogger(__name__)
+
+DECAY_VETO_THRESHOLDS = {
+    # (regime, regime_age_bucket): score_drop_threshold_to_exit
+    # Lower number = more tolerant (harder to exit)
+    # Higher number = less tolerant (easier to exit)
+    ('HEALTHY',  'FRESH'):       0.55,  # Tolerant (Fresh momentum wobbles)
+    ('HEALTHY',  'ESTABLISHED'): 0.42,  # Slight loosening
+    ('HEALTHY',  'MATURE'):      0.35,  # Tighter (Late-cycle moves are fragile)
+
+    ('FRAGILE',  'FRESH'):       0.40,  
+    ('FRAGILE',  'ESTABLISHED'): 0.35,  
+    ('FRAGILE',  'MATURE'):      0.28,  
+
+    ('BEAR',     'FRESH'):       0.38,  
+    ('BEAR',     'ESTABLISHED'): 0.30,  
+    ('BEAR',     'MATURE'):      0.25,  
+}
+
+def get_decay_threshold(regime: str, regime_age_days: int) -> float:
+    if regime_age_days < 30:
+        age_bucket = 'FRESH'
+    elif regime_age_days < 90:
+        age_bucket = 'ESTABLISHED'
+    else:
+        age_bucket = 'MATURE'
+    return DECAY_VETO_THRESHOLDS.get((regime, age_bucket), 0.40)
 
 def get_trading_days_held(conn, ticker: str, entry_date, as_of_date) -> int:
     """
@@ -225,29 +252,46 @@ class StopLifecycleManager:
         decay_baseline = position.get('score_at_entry_baseline') or entry_score
         
         if days_held > 5 and current_score is not None:
-            if current_score < (decay_baseline * 0.60):
-                regime_transitioned = (yesterday_regime is not None and current_regime != yesterday_regime)
-                if regime_transitioned:
-                    new_baseline = current_score
-                    pid = position.get('id')
-                    if conn and pid is not None and not pd.isna(pid):
-                        conn.execute(f"""
-                            UPDATE sandbox.e1_positions
-                            SET ensemble_score = ?,
-                                score_at_entry_baseline = ?,
-                                updated_at = CURRENT_TIMESTAMP
-                            WHERE id = ?
-                        """, [new_baseline, new_baseline, int(pid)])
-                    logger.info(
-                        f"{ticker} REGIME TRANSITION {yesterday_regime}→{current_regime}: "
-                        f"Decay baseline reset to {new_baseline:.3f} (was {decay_baseline:.3f})."
-                    )
-                    return {'action': 'HOLD', 'reason': f'REGIME_TRANSITION_BASELINE_RESET_{current_regime}'}
-                else:
+            regime_transitioned = (yesterday_regime is not None and current_regime != yesterday_regime)
+            if regime_transitioned:
+                new_baseline = current_score
+                pid = position.get('id')
+                if conn and pid is not None and not pd.isna(pid):
+                    conn.execute(f"""
+                        UPDATE {config.E1_POSITIONS_TABLE}
+                        SET ensemble_score = ?,
+                            score_at_entry_baseline = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, [new_baseline, new_baseline, int(pid)])
+                logger.info(
+                    f"{ticker} REGIME TRANSITION {yesterday_regime}→{current_regime}: "
+                    f"Decay baseline reset to {new_baseline:.3f} (was {decay_baseline:.3f})."
+                )
+                return {'action': 'HOLD', 'reason': f'REGIME_TRANSITION_BASELINE_RESET_{current_regime}'}
+            else:
+                regime_age_days = mdata.get('regime_age_days', 0) if mdata else 0
+                threshold = get_decay_threshold(current_regime or 'HEALTHY', regime_age_days)
+                
+                # Check if core technical signals are still intact
+                sig_price_stage = mdata.get('sig_price_stage') if mdata else None
+                sig_rs_12month = mdata.get('sig_rs_12month') if mdata else None
+                
+                # S_C: sig_price_stage == 1.0 (Minervini Stage 2 setup)
+                # S_A: sig_rs_12month > 0
+                core_signals_intact = (
+                    sig_price_stage == 1.0 and 
+                    sig_rs_12month is not None and sig_rs_12month > 0
+                )
+                
+                # If core signals intact, widen threshold by 5% (more tolerant, harder to exit)
+                effective_threshold = threshold + (0.05 if core_signals_intact else 0.0)
+                
+                if current_score < (decay_baseline * (1.0 - effective_threshold)):
                     return {
                         'action': 'CLOSE_POSITION',
                         'exit_trigger': 'SCORE_DECAY_VETO',
-                        'reason': f'Score {current_score:.2f} < 60% of baseline {decay_baseline:.2f}',
+                        'reason': f'Score {current_score:.2f} < {(1.0 - effective_threshold)*100:.0f}% of baseline {decay_baseline:.2f} (Threshold: {effective_threshold:.2f}, Core Intact: {core_signals_intact})',
                         'urgency': 'EOD_LIMIT'
                     }
             

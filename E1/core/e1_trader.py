@@ -464,6 +464,30 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
     current_regime = macro_row['regime']
     yesterday_regime = macro_rows[1]['regime'] if len(macro_rows) > 1 else None
     
+    # Prefetch regime transitions in-memory to calculate age with 0 daily SQL queries
+    transitions = []
+    try:
+        transition_rows = conn.execute("""
+            WITH regime_changes AS (
+                SELECT date, regime, LAG(regime) OVER (ORDER BY date) as prev_regime
+                FROM refined.market_regime
+            )
+            SELECT date, regime FROM regime_changes 
+            WHERE prev_regime IS NULL OR regime != prev_regime
+            ORDER BY date
+        """).fetchall()
+        for r_date, r_reg in transition_rows:
+            parsed_date = pd.to_datetime(r_date).date() if hasattr(r_date, 'strftime') or isinstance(r_date, str) else r_date
+            transitions.append({'date': parsed_date, 'regime': r_reg})
+    except Exception as e:
+        logger.error(f"Failed to prefetch regime transition history: {e}")
+
+    regime_age_days = 0
+    past_other_transitions = [t for t in transitions if t['date'] <= effective_date and t['regime'] != current_regime]
+    if past_other_transitions:
+        last_transition_date = past_other_transitions[-1]['date']
+        regime_age_days = (effective_date - last_transition_date).days
+    
     # Core Macro Signals
     vix_close = macro_row['vix_close']
     hy_spread = macro_row['hy_spread']
@@ -531,6 +555,7 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
             e.sig_rsi_oversold,
             e.sig_fundamental,
             e.sig_rs_12month,
+            e.sig_price_stage,
             e.sig_drawdown_recovery,
             a.short_percent_of_float,
             s.vol_20d_avg as volume,
@@ -631,7 +656,10 @@ def run_e1_trader(simulate=False, manage_only=False, _client=None, _conn=None, _
                 'spy_price': spy_price,
                 'spy_sma50_prior': spy_sma50_prior,
                 'spy_sma200_prior': spy_sma200_prior,
-                'spy_close_prior': spy_close_prior
+                'spy_close_prior': spy_close_prior,
+                'regime_age_days': regime_age_days,
+                'sig_price_stage': mdata.get('sig_price_stage'),
+                'sig_rs_12month': mdata.get('sig_rs_12month')
             }
             # Use DB-stored highest_close_since_t1 if available (for trailing stop)
             db_highest = pos.get('highest_close_since_t1')
