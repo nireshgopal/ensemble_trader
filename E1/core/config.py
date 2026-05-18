@@ -199,6 +199,8 @@ IC_HISTORY_TABLE = "refined.ic_history"
 # ── Pillar 7 (Contextual Training Engine) ─────────────────────────────────
 cte_mult_active = False
 CTE_LOOKUP_TABLE = "sandbox.e1_cte_lookup"
+CTE_VIX_VELOCITY_P33 = -1.56  # Below this = FALLING
+CTE_VIX_VELOCITY_P67 = 1.21   # Above this = RISING
 
 # Note: E1 primary logic is in signal_votes.py and e1_trader.py
 USE_NEW_S10_GATE = False      # SAFETY FLAG: If False, S10 sizer logic is Shadow Only.
